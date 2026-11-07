@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { app } from '../lib/app.svelte'
   import { FONTS, INK_COLORS, MARKER_COLORS, PEN_TOOLS, SHAPES } from '../lib/catalog'
+  import { recognitionReady } from '../lib/recognize'
   import type { Tool, ToolOptions } from '../lib/canvas/engine'
   import type { LineCap, PenTool } from '../lib/types'
   import { softFill } from '../lib/util'
@@ -11,6 +13,7 @@
   const TOOLS: { id: Tool; label: string; key: string }[] = [
     { id: 'mano', label: 'Mover lienzo', key: 'H' },
     { id: 'lazo', label: 'Lazo', key: 'V' },
+    { id: 'magica', label: 'Lápiz mágico', key: 'W' },
     { id: 'pluma', label: 'Pluma', key: 'P' },
     { id: 'lapiz', label: 'Lápiz', key: 'L' },
     { id: 'pincel', label: 'Pincel', key: 'B' },
@@ -63,6 +66,14 @@
         <span class="sr-only">Grosor</span>
         <input type="range" min={pen.min} max={pen.max} step="1" value={opts.sizes[pen.id]} oninput={(e) => setSize(pen.id, +e.currentTarget.value)} />
       </label>
+    {:else if opts.tool === 'magica'}
+      <ColorRow value={opts.color} colors={INK_COLORS} onpick={(c) => (opts.color = c)} />
+      <span class="sep"></span>
+      {#if recognitionReady(app.settings.reconocimiento)}
+        <span class="hint">Escribe y haz una pausa: tu letra se vuelve texto ✨</span>
+      {:else}
+        <button class="chip on" onclick={() => (app.settingsOpen = true)}>✨ Activar la escritura mágica</button>
+      {/if}
     {:else if opts.tool === 'borrador'}
       <div class="chip-row">
         <button class="chip" class:on={opts.eraserMode === 'trazo'} onclick={() => (opts.eraserMode = 'trazo')}>Borra trazos enteros</button>
@@ -135,7 +146,7 @@
     {#each TOOLS as t (t.id)}
       <button class="icon-btn tool" class:active={opts.tool === t.id} onclick={() => setTool(t.id)} aria-label={t.label} aria-pressed={opts.tool === t.id} title="{t.label} ({t.key})">
         <Icon name={t.id} />
-        {#if PEN_TOOLS.some((p) => p.id === t.id)}
+        {#if PEN_TOOLS.some((p) => p.id === t.id) || t.id === 'magica'}
           <span class="ink" style="background:{t.id === 'marcador' ? opts.markerColor : opts.color}"></span>
         {/if}
       </button>
@@ -183,6 +194,10 @@
   .tool {
     position: relative;
     flex: none;
+  }
+
+  .tool[aria-label='Lápiz mágico'] {
+    color: var(--accent-strong);
   }
 
   .ink {

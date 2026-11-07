@@ -37,6 +37,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ultimoRespaldo: null,
   coloresFavoritos: [],
   hojaPdf: 'carta',
+  reconocimiento: { proveedor: 'ninguno', myscriptApp: '', myscriptHmac: '', googleKey: '' },
+  fuentesEstilo: { cursiva: 'dancing', molde: 'nunito', mayusculas: 'playfair' },
 }
 
 export async function loadSettings(): Promise<Settings> {
@@ -209,9 +211,30 @@ export async function saveContent(noteId: string, elements: El[]) {
   await db.transaction('rw', db.contents, db.notes, db.notebooks, async () => {
     await db.contents.put({ noteId, elements: $plain(elements) })
     const note = await db.notes.get(noteId)
-    await db.notes.update(noteId, { updatedAt: now })
+    await db.notes.update(noteId, { updatedAt: now, searchText: textOf(elements) })
     if (note) await db.notebooks.update(note.notebookId, { updatedAt: now })
   })
+}
+
+/** Todo el texto escrito de una nota, en minúsculas y sin acentos, para buscar. */
+export function textOf(elements: El[]): string {
+  return normalize(elements.map((e) => (e.type === 'text' ? e.text : '')).filter(Boolean).join('\n'))
+}
+
+export function normalize(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
+
+/** Busca en títulos y textos de todas las notas que no están en la papelera. */
+export async function searchNotes(query: string, notebookId?: string): Promise<Note[]> {
+  const q = normalize(query.trim())
+  if (!q) return []
+  const live = new Set((await listNotebooks()).map((n) => n.id))
+  const all = notebookId ? await db.notes.where('notebookId').equals(notebookId).toArray() : await db.notes.toArray()
+  return all
+    .filter((n) => n.deletedAt === null && live.has(n.notebookId))
+    .filter((n) => normalize(n.title).includes(q) || (n.searchText ?? '').includes(q))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 /** Quita proxies reactivos de Svelte antes de guardar en IndexedDB (no se pueden clonar). */

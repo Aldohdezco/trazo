@@ -2,7 +2,8 @@
   import { app, requestPersistence, setSetting, toast } from '../lib/app.svelte'
   import { restoreBackup } from '../lib/backup'
   import { db } from '../lib/db'
-  import type { Theme } from '../lib/types'
+  import { FONTS } from '../lib/catalog'
+  import type { FontId, HandStyle, Recognition, Theme } from '../lib/types'
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
 
@@ -20,6 +21,26 @@
       if (e.usage !== undefined) usage = (e.usage / 1024 / 1024).toFixed(1) + ' MB'
     }).catch(() => {})
   })
+
+  const STYLES: { id: HandStyle; label: string; sample: string }[] = [
+    { id: 'cursiva', label: 'Cuando escribo en cursiva', sample: 'Hola, bonita' },
+    { id: 'molde', label: 'Cuando escribo en letra de molde', sample: 'Hola, bonita' },
+    { id: 'mayusculas', label: 'Cuando escribo en MAYÚSCULAS', sample: 'HOLA, BONITA' },
+  ]
+
+  const PROVIDERS: { id: Recognition['proveedor']; label: string }[] = [
+    { id: 'ninguno', label: 'Apagada' },
+    { id: 'myscript', label: 'MyScript' },
+    { id: 'google', label: 'Google Vision' },
+  ]
+
+  function setRecognition(changes: Partial<Recognition>) {
+    void setSetting('reconocimiento', { ...app.settings.reconocimiento, ...changes })
+  }
+
+  function setStyleFont(style: HandStyle, font: FontId) {
+    void setSetting('fuentesEstilo', { ...app.settings.fuentesEstilo, [style]: font })
+  }
 
   const THEMES: { id: Theme; label: string }[] = [
     { id: 'auto', label: 'Como el sistema' },
@@ -67,6 +88,47 @@
         <small class="muted">Actívalo si tu lápiz es activo (como el Apple Pencil): así el dedo y la palma solo mueven la hoja. Con un lápiz genérico déjalo apagado.</small>
       </span>
     </label>
+  </section>
+
+  <section>
+    <h3>Escritura mágica ✨</h3>
+    <p class="muted small">Con el Lápiz mágico tu letra se convierte en texto bonito. Para leer la letra se usa un servicio en internet: elige uno y pega aquí sus llaves (se guardan solo en este dispositivo y no van en los respaldos).</p>
+    <div class="chip-row">
+      {#each PROVIDERS as p (p.id)}
+        <button class="chip" class:on={app.settings.reconocimiento.proveedor === p.id} onclick={() => setRecognition({ proveedor: p.id })}>{p.label}</button>
+      {/each}
+    </div>
+    {#if app.settings.reconocimiento.proveedor === 'myscript'}
+      <label class="field">
+        <span>Application key</span>
+        <input class="input" type="password" autocomplete="off" value={app.settings.reconocimiento.myscriptApp} onchange={(e) => setRecognition({ myscriptApp: e.currentTarget.value.trim() })} />
+      </label>
+      <label class="field">
+        <span>HMAC key</span>
+        <input class="input" type="password" autocomplete="off" value={app.settings.reconocimiento.myscriptHmac} onchange={(e) => setRecognition({ myscriptHmac: e.currentTarget.value.trim() })} />
+      </label>
+      <p class="muted small">Se sacan en <a href="https://developer.myscript.com" target="_blank" rel="noopener">developer.myscript.com</a> (crea una cuenta y unas llaves de «Cloud»). Lee directamente los trazos: es el más preciso.</p>
+    {:else if app.settings.reconocimiento.proveedor === 'google'}
+      <label class="field">
+        <span>API key de Google Cloud</span>
+        <input class="input" type="password" autocomplete="off" value={app.settings.reconocimiento.googleKey} onchange={(e) => setRecognition({ googleKey: e.currentTarget.value.trim() })} />
+      </label>
+      <p class="muted small">En <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a>: activa «Cloud Vision API» y crea una API key limitada a este sitio.</p>
+    {/if}
+
+    <div class="styles">
+      {#each STYLES as st (st.id)}
+        <label class="field">
+          <span>{st.label}</span>
+          <select class="input" value={app.settings.fuentesEstilo[st.id]} onchange={(e) => setStyleFont(st.id, e.currentTarget.value as FontId)}>
+            {#each FONTS as f (f.id)}
+              <option value={f.id}>{f.name}</option>
+            {/each}
+          </select>
+          <span class="sample" style="font-family:'{FONTS.find((f) => f.id === app.settings.fuentesEstilo[st.id])?.family}'">{st.sample}</span>
+        </label>
+      {/each}
+    </div>
   </section>
 
   <section>
@@ -228,6 +290,23 @@
     color: var(--accent-strong);
     font-weight: 800;
     text-decoration: underline;
+  }
+
+  .styles {
+    display: grid;
+    gap: 14px;
+  }
+
+  .sample {
+    font-size: 26px !important;
+    font-weight: 400 !important;
+    color: var(--accent-strong) !important;
+    line-height: 1.3;
+  }
+
+  a {
+    color: var(--accent-strong);
+    font-weight: 800;
   }
 
   ul {

@@ -46,6 +46,8 @@ export interface Note {
   deletedAt: number | null
   thumb: StoredBlob | null
   view: View | null
+  /** Texto de la nota (cajas de texto), para buscar. */
+  searchText?: string
 }
 
 export type PenTool = 'pluma' | 'lapiz' | 'pincel' | 'marcador'
@@ -104,6 +106,13 @@ export type FontId =
   | 'tinos'
   | 'specialelite'
 
+export interface Highlight {
+  /** Rango de caracteres [start, end) dentro de `text`. */
+  start: number
+  end: number
+  color: string
+}
+
 export interface TextEl {
   type: 'text'
   id: string
@@ -118,6 +127,8 @@ export interface TextEl {
   bold: boolean
   italic: boolean
   align: 'left' | 'center' | 'right'
+  /** Fondo pintado con el marcador sobre partes del texto. */
+  highlights?: Highlight[]
 }
 
 export interface ImageEl {
@@ -144,6 +155,15 @@ export interface BlobRecord extends StoredBlob {
 
 export type Theme = 'auto' | 'claro' | 'oscuro'
 
+export type HandStyle = 'cursiva' | 'molde' | 'mayusculas'
+
+export interface Recognition {
+  proveedor: 'ninguno' | 'myscript' | 'google'
+  myscriptApp: string
+  myscriptHmac: string
+  googleKey: string
+}
+
 export interface Settings {
   soloLapiz: boolean
   tema: Theme
@@ -151,6 +171,8 @@ export interface Settings {
   ultimoRespaldo: number | null
   coloresFavoritos: string[]
   hojaPdf: 'a4' | 'carta'
+  reconocimiento: Recognition
+  fuentesEstilo: Record<HandStyle, FontId>
 }
 
 export interface Rect {

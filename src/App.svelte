@@ -10,8 +10,6 @@
   import Shelf from './components/Shelf.svelte'
   import Trash from './components/Trash.svelte'
 
-  let showSettings = $state(false)
-
   initApp().then(() => requestPersistence())
 
   useRegisterSW({ immediate: true })
@@ -45,12 +43,12 @@
   {:else if app.route.name === 'papelera'}
     <Trash />
   {:else}
-    <Shelf onsettings={() => (showSettings = true)} onbackup={backup} />
+    <Shelf onsettings={() => (app.settingsOpen = true)} onbackup={backup} />
   {/if}
 {/if}
 
-{#if showSettings}
-  <Settings onclose={() => (showSettings = false)} onbackup={backup} />
+{#if app.settingsOpen}
+  <Settings onclose={() => (app.settingsOpen = false)} onbackup={backup} />
 {/if}
 
 <div class="toasts" aria-live="polite">

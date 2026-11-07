@@ -146,11 +146,16 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
 
 ## 7. Estado
 
+- **Fase 2:** terminada (2026-11-07). Cambios respecto al plan:
+  - **No hay reconocimiento local.** Ninguna tecnología del navegador lee bien español sin internet (la API nativa de Chrome solo existe en ChromeOS y solo en inglés). Sin internet o sin llaves, el Lápiz mágico deja los trazos como están y avisa.
+  - Proveedores disponibles (se eligen en Ajustes; las llaves se guardan solo en el dispositivo y no van en los respaldos): **MyScript** (lee los trazos directamente; recomendado) y **Google Cloud Vision** (lee una imagen de los trazos).
+  - La búsqueda incluye títulos y todo el texto (escrito o convertido). **No** reconoce en segundo plano los trazos que no se convirtieron, para no gastar las peticiones gratis del servicio.
+  - Si se sigue escribiendo con el Lápiz mágico justo a la derecha de un texto recién convertido, se agrega a ese mismo renglón.
 - **Fase 1:** terminada (2026-11-07).
   - El papel Cornell y el planner semanal se repiten por "hojas" tamaño carta dentro del lienzo infinito.
   - Atajos de teclado en PC: V lazo, H mano, P pluma, L lápiz, B pincel, M marcador, E borrador, F figuras, R líneas, T texto; Ctrl+Z/Y, Ctrl+C/X/V, Ctrl+D, Supr.
 
 ## 8. Pendientes por confirmar
 - [ ] Exportar a PDF: cortar el lienzo en hojas A4 o Carta automáticamente.
-- [ ] Proveedor de reconocimiento en la nube (se decide al empezar la Fase 2 tras probar los candidatos).
+- [ ] Proveedor de reconocimiento: falta registrar las llaves (MyScript recomendado) y probar con letra real.
 - [ ] Sin fecha límite.

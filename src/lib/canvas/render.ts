@@ -209,15 +209,41 @@ export function drawLine(ctx: CanvasRenderingContext2D, el: LineEl) {
 
 function drawText(ctx: CanvasRenderingContext2D, el: TextEl) {
   const box = boxOf(el)
-  const { lines } = layoutText(el)
+  const { lines, starts } = layoutText(el)
   withBoxTransform(ctx, box, el.rotation, () => {
     ctx.font = fontString(el)
+    const lh = el.size * LINE_HEIGHT
+    const top = -box.h / 2
+    const left = -box.w / 2
+
+    // Fondo pintado con el marcador, detrás de las letras.
+    if (el.highlights?.length) {
+      lines.forEach((line, i) => {
+        const s = starts[i]
+        const lineW = ctx.measureText(line).width
+        const ax = left + (el.align === 'left' ? 0 : el.align === 'center' ? (box.w - lineW) / 2 : box.w - lineW)
+        for (const h of el.highlights!) {
+          const a = Math.max(h.start, s) - s
+          const b = Math.min(h.end, s + line.length) - s
+          if (b <= a) continue
+          const x0 = ax + ctx.measureText(line.slice(0, a)).width
+          const x1 = ax + ctx.measureText(line.slice(0, b)).width
+          const pad = el.size * 0.12
+          ctx.fillStyle = h.color
+          ctx.globalAlpha = 0.85
+          ctx.beginPath()
+          ctx.roundRect(x0 - pad, top + lh * i + lh * 0.1, x1 - x0 + pad * 2, lh * 0.82, el.size * 0.18)
+          ctx.fill()
+          ctx.globalAlpha = 1
+        }
+      })
+    }
+
     ctx.fillStyle = el.color
     ctx.textBaseline = 'middle'
     ctx.textAlign = el.align
-    const lh = el.size * LINE_HEIGHT
-    const ax = el.align === 'left' ? -box.w / 2 : el.align === 'right' ? box.w / 2 : 0
-    lines.forEach((line, i) => ctx.fillText(line, ax, -box.h / 2 + lh * (i + 0.5)))
+    const ax = el.align === 'left' ? left : el.align === 'right' ? box.w / 2 : 0
+    lines.forEach((line, i) => ctx.fillText(line, ax, top + lh * (i + 0.5)))
   })
 }
 

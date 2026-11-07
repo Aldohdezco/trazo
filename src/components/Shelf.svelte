@@ -6,10 +6,12 @@
     listNotebooks,
     moveNotebook,
     restoreNotebook,
+    searchNotes,
     trashNotebook,
     updateNotebook,
   } from '../lib/db'
-  import type { Notebook } from '../lib/types'
+  import type { Note, Notebook } from '../lib/types'
+  import { formatDate } from '../lib/util'
   import ActionSheet, { type Action } from './ActionSheet.svelte'
   import Bow from './Bow.svelte'
   import CoverArt from './CoverArt.svelte'
@@ -23,6 +25,20 @@
   let creating = $state(false)
   let editing = $state<Notebook | null>(null)
   let menuFor = $state<Notebook | null>(null)
+  let query = $state('')
+  let results = $state<Note[] | null>(null)
+
+  $effect(() => {
+    const q = query
+    if (!q.trim()) {
+      results = null
+      return
+    }
+    const t = setTimeout(async () => (results = await searchNotes(q)), 150)
+    return () => clearTimeout(t)
+  })
+
+  const nameOf = (id: string) => notebooks.find((n) => n.id === id)?.name ?? ''
 
   async function refresh() {
     notebooks = await listNotebooks()
@@ -82,6 +98,34 @@
     </div>
   {/if}
 
+  {#if notebooks.length}
+    <label class="search">
+      <Icon name="buscar" size={20} />
+      <span class="sr-only">Buscar en todas las notas</span>
+      <input bind:value={query} placeholder="Buscar en todas tus notas…" />
+      {#if query}
+        <button class="icon-btn clear" onclick={() => (query = '')} aria-label="Borrar búsqueda"><Icon name="cerrar" size={18} /></button>
+      {/if}
+    </label>
+  {/if}
+
+  {#if results}
+    <ul class="results" aria-label="Resultados">
+      {#each results as n (n.id)}
+        <li>
+          <button onclick={() => go({ name: 'nota', id: n.id })}>
+            <Icon name="papel" />
+            <span class="r-text">
+              <strong>{n.title}</strong>
+              <small class="muted">{nameOf(n.notebookId)} · {formatDate(n.updatedAt)}</small>
+            </span>
+          </button>
+        </li>
+      {:else}
+        <li class="none">No encontré nada con «{query}» ♡</li>
+      {/each}
+    </ul>
+  {:else}
   <section class="shelf" aria-label="Cuadernos">
     <button class="new" onclick={() => (creating = true)}>
       <span class="plus"><Icon name="mas" size={30} stroke={2.2} /></span>
@@ -100,6 +144,7 @@
       </div>
     {/each}
   </section>
+  {/if}
 
   {#if loaded && !notebooks.length}
     <p class="empty">Aquí vivirán tus cuadernos ♡<br />Crea el primero para empezar a escribir.</p>
@@ -178,6 +223,77 @@
     background: var(--surface);
     border: 1.5px dashed var(--accent);
     font-weight: 700;
+  }
+
+  .search {
+    max-width: 1200px;
+    margin: 0 auto 22px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 6px 0 16px;
+    min-height: 48px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    color: var(--text-soft);
+    box-shadow: var(--shadow);
+  }
+
+  .search input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: none;
+    outline: none;
+    min-height: 44px;
+    color: var(--text);
+  }
+
+  .clear {
+    width: 38px;
+    height: 38px;
+  }
+
+  .results {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 8px;
+  }
+
+  .results button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 60px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    text-align: left;
+    color: var(--accent);
+  }
+
+  .results button:hover {
+    background: var(--surface-2);
+  }
+
+  .r-text {
+    display: grid;
+    color: var(--text);
+  }
+
+  .none {
+    text-align: center;
+    padding: 30px 0;
+    color: var(--text-soft);
+    font-family: var(--font-script);
+    font-size: 24px;
   }
 
   .shelf {

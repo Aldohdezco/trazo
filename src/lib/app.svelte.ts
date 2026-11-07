@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, loadSettings, saveSetting } from './db'
+import { DEFAULT_SETTINGS, db, loadSettings, saveSetting, textOf } from './db'
 import type { Settings } from './types'
 
 export type Route =
@@ -38,6 +38,7 @@ export const app = $state({
   route: parseHash() as Route,
   settings: { ...DEFAULT_SETTINGS } as Settings,
   ready: false,
+  settingsOpen: false,
   toasts: [] as Toast[],
 })
 
@@ -55,6 +56,16 @@ export function go(r: Route, replace = false) {
 export async function initApp() {
   app.settings = await loadSettings()
   app.ready = true
+  void indexOldNotes()
+}
+
+/** Las notas creadas antes de la búsqueda no tienen su texto indexado: se calcula una vez. */
+async function indexOldNotes() {
+  const pending = (await db.notes.toArray()).filter((n) => n.searchText === undefined)
+  for (const n of pending) {
+    const c = await db.contents.get(n.id)
+    await db.notes.update(n.id, { searchText: textOf(c?.elements ?? []) })
+  }
 }
 
 export async function setSetting<K extends keyof Settings>(key: K, value: Settings[K]) {

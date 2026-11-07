@@ -1,11 +1,12 @@
 import type { Background, El, FontId, LineCap, LineEl, PenTool, Rect, ShapeEl, ShapeKind, StrokeEl, TextEl, View } from '../types'
 import { clamp, isDark, uid } from '../util'
 import { drawPaper } from './background'
-import { contentBounds, elBounds, eraseStroke, hitTest, lassoSelects, rotateEl, scaleEl, translateEl, unionRects } from './geom'
+import { boxOf, contentBounds, elBounds, eraseStroke, hitTest, lassoSelects, rectsIntersect, rotateEl, rotatePoint, scaleEl, translateEl, unionRects } from './geom'
+import { layoutText, measureWith, mergeHighlights, rangesUnder } from './text'
 import { onImageLoaded } from './images'
 import { drawElements, drawLine, drawStroke, shapePath, strokeOutline } from './render'
 
-export type Tool = 'mano' | 'lazo' | PenTool | 'borrador' | 'figura' | 'linea' | 'texto'
+export type Tool = 'mano' | 'lazo' | 'magica' | PenTool | 'borrador' | 'figura' | 'linea' | 'texto'
 
 export interface ToolOptions {
   tool: Tool
@@ -33,12 +34,14 @@ export interface EngineCallbacks {
   editText(el: TextEl, isNew: boolean): void
   /** Se llama antes de procesar cualquier toque (p. ej. para cerrar la edición de texto). */
   pointerDown?(): void
+  /** Trazo hecho con el Lápiz mágico (ya está en el lienzo; se convertirá a texto). */
+  magicStroke?(el: StrokeEl): void
 }
 
 export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 8
 
-const PEN_TOOLS: Tool[] = ['pluma', 'lapiz', 'pincel', 'marcador']
+const PEN_TOOLS: Tool[] = ['pluma', 'lapiz', 'pincel', 'marcador', 'magica']
 const HANDLE_RADIUS = 20
 const ROTATE_OFFSET = 34
 
@@ -47,7 +50,7 @@ type Gesture =
   | { kind: 'ignore' }
   | { kind: 'pan'; pointerId: number; last: [number, number] }
   | { kind: 'pinch'; startDist: number; startZoom: number; anchor: [number, number] }
-  | { kind: 'draw'; pointerId: number; points: number[]; tool: PenTool; pressure: boolean; start: number }
+  | { kind: 'draw'; pointerId: number; points: number[]; tool: PenTool; pressure: boolean; start: number; magic: boolean }
   | { kind: 'erase'; pointerId: number; before: El[]; changed: boolean; last: [number, number] | null }
   | { kind: 'lasso'; pointerId: number; poly: number[] }
   | {
@@ -214,11 +217,12 @@ export class Engine {
     this.zoomBy(z / this.view.zoom)
   }
 
-  fitContent() {
+  /** Muestra todo el contenido. `maxZoom` evita agrandar de más una nota con poquito. */
+  fitContent(maxZoom = 2) {
     const b = contentBounds(this.elements)
     if (!b) return this.setView({ x: -40, y: -40, zoom: 1 })
     const pad = 60
-    const z = clamp(Math.min(this.w / (b.w + pad * 2), this.h / (b.h + pad * 2)), MIN_ZOOM, 2)
+    const z = clamp(Math.min(this.w / (b.w + pad * 2), this.h / (b.h + pad * 2)), MIN_ZOOM, maxZoom)
     this.setView({ x: b.x + b.w / 2 - this.w / 2 / z, y: b.y + b.h / 2 - this.h / 2 / z, zoom: z })
   }
 
@@ -482,7 +486,16 @@ export class Engine {
 
     if (PEN_TOOLS.includes(tool)) {
       const pressure = e.pointerType === 'pen' && e.pressure > 0 && e.pressure !== 0.5
-      this.gesture = { kind: 'draw', pointerId: id, points: [wx, wy, pressure ? e.pressure : 0.5], tool: tool as PenTool, pressure, start: performance.now() }
+      const magic = tool === 'magica'
+      this.gesture = {
+        kind: 'draw',
+        pointerId: id,
+        points: [wx, wy, pressure ? e.pressure : 0.5],
+        tool: magic ? 'pluma' : (tool as PenTool),
+        pressure,
+        start: performance.now(),
+        magic,
+      }
       this.requestRender(false, true)
       return
     }
@@ -690,7 +703,14 @@ export class Engine {
           points: points.map((v) => Math.round(v * 100) / 100),
           pressure: g.pressure,
         }
+        // El marcador sobre un texto le pinta el fondo en lugar de quedar como trazo.
+        const highlighted = g.tool === 'marcador' ? this.highlightTexts(el) : null
+        if (highlighted) {
+          this.commit(highlighted)
+          break
+        }
         this.commit([...this.elements, el])
+        if (g.magic) this.cb.magicStroke?.(el)
         break
       }
       case 'erase':
@@ -746,6 +766,27 @@ export class Engine {
   private commit(els: El[]) {
     this.elements = els
     this.cb.commit(els)
+  }
+
+  private highlightTexts(stroke: StrokeEl): El[] | null {
+    const sb = elBounds(stroke)
+    let changed = false
+    const els = this.elements.map((el) => {
+      if (el.type !== 'text' || !rectsIntersect(elBounds(el), sb)) return el
+      const box = boxOf(el)
+      const cx = box.x + box.w / 2
+      const cy = box.y + box.h / 2
+      const local: number[] = []
+      for (let i = 0; i < stroke.points.length; i += 3) {
+        const [lx, ly] = rotatePoint(stroke.points[i], stroke.points[i + 1], cx, cy, -el.rotation)
+        local.push(lx - box.x, ly - box.y)
+      }
+      const ranges = rangesUnder(el, layoutText(el), local, stroke.color, (s) => measureWith(el, s))
+      if (!ranges) return el
+      changed = true
+      return { ...el, highlights: mergeHighlights(el.highlights ?? [], ranges) }
+    })
+    return changed ? els : null
   }
 
   private strokeColor(tool: PenTool): string {

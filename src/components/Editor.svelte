@@ -3,12 +3,14 @@
   import { app, go, toast } from '../lib/app.svelte'
   import { FONTS, INK_COLORS } from '../lib/catalog'
   import { Engine, type Tool, type ToolOptions } from '../lib/canvas/engine'
-  import { translateEl } from '../lib/canvas/geom'
+  import { boxOf, contentBounds, translateEl } from '../lib/canvas/geom'
   import { prepareImage, rememberBitmap } from '../lib/canvas/images'
-  import { LINE_HEIGHT, fontString, naturalWidth } from '../lib/canvas/text'
+  import { LINE_HEIGHT, adjustHighlights, fontString, naturalWidth } from '../lib/canvas/text'
+  import { detectStyle, textFromStrokes } from '../lib/handwriting'
+  import { recognize, recognitionReady } from '../lib/recognize'
   import { db, getNote, loadContent, putBlob, saveContent, updateNote } from '../lib/db'
   import { exportPdf, exportPng, makeThumbnail, saveFile } from '../lib/export'
-  import type { Background, El, ImageEl, Note, Rect, TextEl } from '../lib/types'
+  import type { Background, El, ImageEl, Note, Rect, StrokeEl, TextEl } from '../lib/types'
   import { blobToStored, debounce, softFill, uid } from '../lib/util'
   import ActionSheet, { type Action } from './ActionSheet.svelte'
   import ColorRow from './ColorRow.svelte'
@@ -74,7 +76,15 @@
   let clipboard: El[] = []
   let busy = $state(false)
 
+  let converting = $state(false)
+  let magicIds: string[] = []
+  let magicTimer: ReturnType<typeof setTimeout> | undefined
+  /** Último texto creado con el Lápiz mágico, para seguir el mismo renglón. */
+  let lastMagic: { id: string; time: number } | null = null
+
   const selectedEls = $derived(selection.length ? current.filter((e) => selection.includes(e.id)) : [])
+  const selStrokes = $derived(selectedEls.filter((e) => e.type === 'stroke') as StrokeEl[])
+  const selHighlighted = $derived(selectedEls.some((e) => e.type === 'text' && e.highlights?.length))
   const singleText = $derived(selectedEls.length === 1 && selectedEls[0].type === 'text' ? (selectedEls[0] as TextEl) : null)
 
   // ---------- Guardado ----------
@@ -170,6 +180,8 @@
       commit: (els) => commit(els),
       pointerDown: () => {
         if (editing) finishText()
+        // Sigue escribiendo: la conversión espera a que termine.
+        if (magicIds.length) clearTimeout(magicTimer)
       },
       selection: (ids) => {
         selection = ids
@@ -183,11 +195,21 @@
         saveView(v)
       },
       editText: (el, isNew) => startText(el, isNew),
+      magicStroke: (el) => {
+        magicIds.push(el.id)
+        clearTimeout(magicTimer)
+        // Una pausa corta = terminó de escribir.
+        magicTimer = setTimeout(() => {
+          const ids = magicIds
+          magicIds = []
+          void convertStrokes(ids, true)
+        }, 1200)
+      },
     })
     engine.soloLapiz = app.settings.soloLapiz
     engine.setElements(current)
     if (n.view) engine.setView(n.view, false)
-    else if (current.length) engine.fitContent()
+    else if (current.length) engine.fitContent(1)
     zoom = engine.view.zoom
   })
 
@@ -196,6 +218,7 @@
   }
 
   onDestroy(() => {
+    clearTimeout(magicTimer)
     if (editing) finishText()
     persistNow()
     engine?.destroy()
@@ -247,6 +270,63 @@
     if (!editing) return
     editing.el = { ...editing.el, ...changes }
     tick().then(autoGrow)
+  }
+
+  // ---------- Escritura mágica ----------
+
+  /** Si lo nuevo se escribió justo a la derecha del último texto mágico, va en el mismo renglón. */
+  function continuation(strokes: StrokeEl[]): TextEl | null {
+    if (!lastMagic || Date.now() - lastMagic.time > 30_000) return null
+    const prev = current.find((e) => e.id === lastMagic!.id)
+    if (!prev || prev.type !== 'text' || prev.rotation) return null
+    const b = contentBounds(strokes)!
+    const pb = boxOf(prev)
+    const gap = b.x - (pb.x + pb.w)
+    const overlapY = Math.min(b.y + b.h, pb.y + pb.h) - Math.max(b.y, pb.y)
+    return gap > -prev.size && gap < prev.size * 3 && overlapY > Math.min(b.h, pb.h) * 0.4 ? prev : null
+  }
+
+  async function convertStrokes(ids: string[], magic = false) {
+    const idSet = new Set(ids)
+    const strokes = current.filter((e) => idSet.has(e.id) && e.type === 'stroke') as StrokeEl[]
+    if (!strokes.length) return
+    if (!recognitionReady(app.settings.reconocimiento)) {
+      toast('Para convertir tu letra, configura el reconocimiento en Ajustes ✨', { label: 'Configurar', run: () => (app.settingsOpen = true) })
+      return
+    }
+    converting = true
+    try {
+      const text = await recognize(strokes, $state.snapshot(app.settings.reconocimiento))
+      if (!text) {
+        toast('No logré leer eso. Tus trazos se quedan como están ♡')
+        return
+      }
+      // Solo se quitan los trazos que siguen existiendo (pudieron borrarse mientras tanto).
+      const still = new Set(current.filter((e) => idSet.has(e.id)).map((e) => e.id))
+      if (!still.size) return
+      const rest = current.filter((e) => !still.has(e.id))
+      const prev = magic ? continuation(strokes) : null
+      if (prev) {
+        const joined = { ...prev, text: prev.text + ' ' + text }
+        const grown = { ...joined, w: Math.ceil(naturalWidth(joined)) + 6 }
+        commit(rest.map((e) => (e.id === prev.id ? grown : e)))
+        lastMagic = { id: prev.id, time: Date.now() }
+      } else {
+        const style = detectStyle(strokes.length, text)
+        const el = textFromStrokes(strokes, text, app.settings.fuentesEstilo[style])
+        commit([...rest, el])
+        if (magic) lastMagic = { id: el.id, time: Date.now() }
+      }
+      engine?.select([])
+    } catch (err) {
+      toast((err as Error).message)
+    } finally {
+      converting = false
+    }
+  }
+
+  function clearHighlights() {
+    patchSelection((el) => (el.type === 'text' && el.highlights?.length ? { ...el, highlights: [] } : el))
   }
 
   // ---------- Selección ----------
@@ -341,7 +421,7 @@
 
   // ---------- Teclado ----------
 
-  const KEYS: Record<string, Tool> = { v: 'lazo', h: 'mano', p: 'pluma', l: 'lapiz', b: 'pincel', m: 'marcador', e: 'borrador', f: 'figura', r: 'linea', t: 'texto' }
+  const KEYS: Record<string, Tool> = { w: 'magica', v: 'lazo', h: 'mano', p: 'pluma', l: 'lapiz', b: 'pincel', m: 'marcador', e: 'borrador', f: 'figura', r: 'linea', t: 'texto' }
 
   function isTyping(t: EventTarget | null) {
     const el = t as HTMLElement | null
@@ -353,7 +433,7 @@
       if (e.key === 'Escape') finishText()
       return
     }
-    if (isTyping(e.target) || showPaper || showExport) return
+    if (isTyping(e.target) || showPaper || showExport || app.settingsOpen) return
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
     if (mod && k === 'z') {
@@ -535,7 +615,11 @@
           class="text-edit"
           value={el.text}
           oninput={(e) => {
-            if (editing) editing.el.text = e.currentTarget.value
+            if (editing) {
+              const old = editing.el
+              const text = e.currentTarget.value
+              editing.el = { ...old, text, highlights: adjustHighlights(old.text, text, old.highlights ?? []) }
+            }
             autoGrow()
           }}
           onblur={() => setTimeout(() => document.activeElement?.closest('.text-format') || finishText(), 0)}
@@ -554,6 +638,12 @@
             {#if singleText}
               <button class="icon-btn" onclick={() => startText(singleText!, false)} aria-label="Editar texto" title="Editar texto"><Icon name="editar" /></button>
             {/if}
+            {#if selStrokes.length}
+              <button class="icon-btn magic" onclick={() => convertStrokes(selStrokes.map((s) => s.id))} disabled={converting} aria-label="Convertir a texto" title="Convertir a texto"><Icon name="magica" /></button>
+            {/if}
+            {#if selHighlighted}
+              <button class="icon-btn" onclick={clearHighlights} aria-label="Quitar resaltado" title="Quitar resaltado"><Icon name="sinresaltado" /></button>
+            {/if}
             <button class="icon-btn" onclick={() => (showSelColor = true)} aria-label="Cambiar color" title="Cambiar color"><Icon name="paleta" /></button>
             <button class="icon-btn" onclick={() => duplicateSelection()} aria-label="Duplicar" title="Duplicar"><Icon name="copiar" /></button>
             <button class="icon-btn" onclick={() => reorder(true)} aria-label="Traer al frente" title="Traer al frente"><Icon name="frente" /></button>
@@ -569,6 +659,8 @@
 
       {#if busy}
         <div class="busy" role="status">Un momentito… ✨</div>
+      {:else if converting}
+        <div class="busy sparkle" role="status">Leyendo tu letra… ✨</div>
       {/if}
     </div>
   </div>
@@ -722,6 +814,25 @@
 
   .danger {
     color: var(--danger);
+  }
+
+  .magic {
+    color: var(--accent-strong);
+  }
+
+  .sparkle {
+    animation: shimmer 1.2s ease-in-out infinite alternate;
+  }
+
+  @keyframes shimmer {
+    from {
+      opacity: 0.75;
+      transform: scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1.02);
+    }
   }
 
   .text-format {

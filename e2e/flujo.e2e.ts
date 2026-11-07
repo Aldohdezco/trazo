@@ -110,3 +110,78 @@ test('exportar PNG, PDF y respaldo', async ({ page }) => {
   await page.getByRole('button', { name: 'Guardar respaldo' }).click()
   expect((await dl).suggestedFilename()).toMatch(/^trazo-respaldo-.*\.trazo$/)
 })
+
+test('escritura mágica, marcador sobre texto y búsqueda', async ({ page }, info) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  // Respuesta simulada de MyScript: revisa que lleguen las llaves y la firma.
+  let request: { headers: Record<string, string>; body: { contentType: string; strokes: unknown[]; configuration: { lang: string } } } | null = null
+  await page.route('https://cloud.myscript.com/**', async (route) => {
+    request = { headers: route.request().headers(), body: route.request().postDataJSON() }
+    await route.fulfill({ status: 200, contentType: 'text/plain', body: 'hola mundo' })
+  })
+
+  await page.goto('./')
+  await page.getByRole('button', { name: 'Ajustes' }).click()
+  await page.getByRole('button', { name: 'MyScript' }).click()
+  await page.getByLabel('Application key').fill('app-123')
+  await page.getByLabel('Application key').blur()
+  await page.getByLabel('HMAC key').fill('hmac-456')
+  await page.getByLabel('HMAC key').blur()
+  await page.screenshot({ path: info.outputPath('1-ajustes.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Cerrar' }).click()
+
+  await page.getByRole('button', { name: 'Nuevo cuaderno' }).click()
+  await page.getByPlaceholder('Mi cuaderno').fill('Diario')
+  await page.getByRole('button', { name: 'Crear cuaderno' }).click()
+  await page.getByRole('button', { name: 'Nueva nota' }).click()
+  await page.getByPlaceholder('Nota sin título').fill('Lunes')
+  await page.getByRole('button', { name: 'Crear nota' }).click()
+
+  const box = (await page.locator('.stage').boundingBox())!
+  const at = (x: number, y: number): [number, number] => [box.x + x, box.y + y]
+
+  // Dos trazos "en cursiva" con el Lápiz mágico
+  await page.getByRole('button', { name: 'Lápiz mágico' }).click()
+  await drag(page, Array.from({ length: 16 }, (_, i) => at(150 + i * 10, 200 + Math.sin(i) * 20)))
+  await drag(page, Array.from({ length: 16 }, (_, i) => at(330 + i * 10, 200 + Math.cos(i) * 20)))
+  await expect.poll(() => request).not.toBeNull()
+  await expect(page.getByText('Leyendo tu letra')).toBeHidden()
+  await page.waitForTimeout(200)
+
+  expect(request!.headers['applicationkey']).toBe('app-123')
+  expect(request!.headers['hmac']).toMatch(/^[0-9a-f]{128}$/)
+  expect(request!.body.contentType).toBe('Text')
+  expect(request!.body.configuration.lang).toBe('es_ES')
+  expect(request!.body.strokes).toHaveLength(2)
+  await page.screenshot({ path: info.outputPath('2-convertido.png') })
+
+  // Marcador amarillo sobre el texto convertido: pinta el fondo, no deja trazo
+  await page.getByRole('button', { name: 'Marcador', exact: true }).click()
+  await page.getByRole('radio', { name: '#ffe7a3' }).click()
+  await drag(page, [at(140, 205), at(260, 205)])
+  await page.screenshot({ path: info.outputPath('3-resaltado.png') })
+
+  // La nota se encuentra buscando su texto, sin acentos ni mayúsculas
+  await page.waitForTimeout(700)
+  await page.getByRole('button', { name: 'Volver al cuaderno' }).click()
+  await page.getByRole('button', { name: 'Volver al estante' }).click()
+  await page.getByPlaceholder('Buscar en todas tus notas…').fill('MUNDO')
+  await expect(page.getByRole('button', { name: /Lunes/ })).toBeVisible()
+  await page.screenshot({ path: info.outputPath('4-busqueda.png') })
+  await page.getByRole('button', { name: /Lunes/ }).click()
+
+  // Lazo + "Convertir a texto" también funciona con trazos normales
+  await page.getByRole('button', { name: 'Pluma' }).click()
+  await drag(page, [at(150, 400), at(170, 380), at(190, 420), at(210, 380)])
+  await page.getByRole('button', { name: 'Lazo' }).click()
+  await drag(page, [at(130, 360), at(240, 360), at(240, 440), at(130, 440), at(130, 362)])
+  request = null
+  await page.getByRole('button', { name: 'Convertir a texto' }).click()
+  await expect.poll(() => request).not.toBeNull()
+  await expect(page.getByText('Leyendo tu letra')).toBeHidden()
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: info.outputPath('5-lazo-convertir.png') })
+
+  expect(errors).toEqual([])
+})

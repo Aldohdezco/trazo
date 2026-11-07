@@ -7,6 +7,7 @@
     getNotebook,
     listNotes,
     loadContent,
+    searchNotes,
     restoreNote,
     trashNote,
     updateNote,
@@ -58,7 +59,17 @@
   })
   onDestroy(revokeThumbs)
 
-  const filtered = $derived(query.trim() ? notes.filter((n) => n.title.toLowerCase().includes(query.trim().toLowerCase())) : notes)
+  let matches = $state<Set<string> | null>(null)
+  $effect(() => {
+    const q = query
+    if (!q.trim()) {
+      matches = null
+      return
+    }
+    const t = setTimeout(async () => (matches = new Set((await searchNotes(q, id)).map((n) => n.id))), 150)
+    return () => clearTimeout(t)
+  })
+  const filtered = $derived(matches ? notes.filter((n) => matches!.has(n.id)) : notes)
 
   async function exportNotes(list: Note[], name: string) {
     busy = true
@@ -122,7 +133,7 @@
       <label class="search">
         <Icon name="buscar" size={20} />
         <span class="sr-only">Buscar notas</span>
-        <input bind:value={query} placeholder="Buscar por título…" />
+        <input bind:value={query} placeholder="Buscar en títulos y textos…" />
       </label>
     {/if}
 
@@ -150,7 +161,7 @@
     {#if !notes.length}
       <p class="empty">Un cuaderno nuevecito ♡<br />Toca «Nueva nota» para empezar.</p>
     {:else if !filtered.length}
-      <p class="empty small-empty">Ninguna nota se llama así.</p>
+      <p class="empty small-empty">Ninguna nota tiene eso.</p>
     {/if}
   </div>
 {/if}

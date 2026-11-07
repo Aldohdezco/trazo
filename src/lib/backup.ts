@@ -4,6 +4,8 @@ import type { BlobRecord, Note, NoteContent, Notebook, Settings } from './types'
 
 export const BACKUP_VERSION = 1
 
+const LOCAL_ONLY = new Set(['ultimoRespaldo', 'reconocimiento'])
+
 interface BackupData {
   app: 'trazo'
   version: number
@@ -42,8 +44,8 @@ export async function createBackup(db: TrazoDB): Promise<Uint8Array> {
       files[file] = new Uint8Array(b.data)
       return { id: b.id, type: b.type, file }
     }),
-    // El "último respaldo" es de este dispositivo, no se copia.
-    settings: Object.fromEntries(settingRows.filter((r) => r.key !== 'ultimoRespaldo').map((r) => [r.key, r.value])),
+    // El "último respaldo" y las llaves del reconocimiento son de este dispositivo: no se copian.
+    settings: Object.fromEntries(settingRows.filter((r) => !LOCAL_ONLY.has(r.key)).map((r) => [r.key, r.value])),
   }
   files['trazo.json'] = strToU8(JSON.stringify(data))
   // Las imágenes ya vienen comprimidas: no vale la pena volver a comprimirlas.
@@ -94,7 +96,7 @@ export async function restoreBackup(db: TrazoDB, bytes: Uint8Array, mode: 'reemp
       await db.notes.bulkPut(notes)
       await db.contents.bulkPut(data.contents)
       await db.blobs.bulkPut(blobs)
-      await db.settings.bulkPut(Object.entries(data.settings).map(([key, value]) => ({ key, value })))
+      await db.settings.bulkPut(Object.entries(data.settings).filter(([key]) => !LOCAL_ONLY.has(key)).map(([key, value]) => ({ key, value })))
       return
     }
     const existingNb = new Map((await db.notebooks.toArray()).map((n) => [n.id, n]))
