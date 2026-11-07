@@ -1,6 +1,7 @@
 <script lang="ts">
   import { app, requestPersistence, setSetting, toast } from '../lib/app.svelte'
   import { restoreBackup } from '../lib/backup'
+  import { cleanKey, testGeminiKey } from '../lib/recognize'
   import { db } from '../lib/db'
   import { FONTS } from '../lib/catalog'
   import type { FontId, HandStyle, Recognition, Theme } from '../lib/types'
@@ -34,6 +35,15 @@
     { id: 'myscript', label: 'MyScript' },
     { id: 'google', label: 'Google Vision' },
   ]
+
+  let keyTest = $state<{ ok: boolean; message: string } | null>(null)
+  let testing = $state(false)
+
+  async function testKey() {
+    testing = true
+    keyTest = await testGeminiKey(app.settings.reconocimiento.geminiKey)
+    testing = false
+  }
 
   function setRecognition(changes: Partial<Recognition>) {
     void setSetting('reconocimiento', { ...app.settings.reconocimiento, ...changes })
@@ -102,8 +112,29 @@
     {#if app.settings.reconocimiento.proveedor === 'gemini'}
       <label class="field">
         <span>Llave de Gemini (API key)</span>
-        <input class="input" type="password" autocomplete="off" value={app.settings.reconocimiento.geminiKey} onchange={(e) => setRecognition({ geminiKey: e.currentTarget.value.trim() })} />
+        <input
+          class="input key"
+          type="text"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="AIza…"
+          value={app.settings.reconocimiento.geminiKey}
+          oninput={() => (keyTest = null)}
+          onchange={(e) => {
+            const k = cleanKey(e.currentTarget.value)
+            e.currentTarget.value = k
+            setRecognition({ geminiKey: k })
+          }}
+        />
       </label>
+      <div class="row">
+        <button class="btn" disabled={!app.settings.reconocimiento.geminiKey || testing} onclick={testKey}>{testing ? 'Probando…' : 'Probar llave'}</button>
+      </div>
+      {#if keyTest}
+        <p class="key-test" class:ok={keyTest.ok} role="status">{keyTest.message}</p>
+      {/if}
       <p class="muted small">
         Gratis: entra a <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> con una cuenta de Google, toca «Create API key» y pégala aquí.
         Lee muy bien la letra corrida y reconoce si escribiste en cursiva.
@@ -300,6 +331,24 @@
     color: var(--accent-strong);
     font-weight: 800;
     text-decoration: underline;
+  }
+
+  .key {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+  }
+
+  .key-test {
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
+  }
+
+  .key-test.ok {
+    background: color-mix(in srgb, #3c9d74 14%, transparent);
+    color: #2f7d5c;
   }
 
   .styles {

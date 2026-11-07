@@ -71,3 +71,17 @@ describe('Gemini', () => {
     expect(parseGemini('texto suelto')).toEqual({ text: 'texto suelto' })
   })
 })
+
+describe('errores de Gemini', () => {
+  it('explica cada caso en español', async () => {
+    const { explainGemini, cleanKey } = await import('../src/lib/recognize')
+    expect(explainGemini(400, 'API key not valid. Please pass a valid API key.', 'API_KEY_INVALID')).toMatch(/no es válida/)
+    expect(explainGemini(403, 'Generative Language API has not been used in project 123 before or it is disabled', 'SERVICE_DISABLED')).toMatch(/no está activada/)
+    expect(explainGemini(403, 'Requests from referer <empty> are blocked.', 'API_KEY_HTTP_REFERRER_BLOCKED')).toMatch(/restricciones/)
+    expect(explainGemini(400, 'User location is not supported for the API use.', 'FAILED_PRECONDITION')).toMatch(/país/)
+    expect(explainGemini(429, 'Quota exceeded ... limit: 0, model: gemini-2.5-flash', 'RESOURCE_EXHAUSTED')).toMatch(/facturación/)
+    expect(explainGemini(429, 'Quota exceeded ... limit: 20', 'RESOURCE_EXHAUSTED')).toMatch(/en un rato/)
+    expect(explainGemini(500, 'Internal', '')).toBe('Gemini respondió con un error (500): Internal')
+    expect(cleanKey(' AIza​xyz \n')).toBe('AIzaxyz')
+  })
+})
