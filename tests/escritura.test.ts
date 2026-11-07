@@ -84,4 +84,18 @@ describe('errores de Gemini', () => {
     expect(explainGemini(500, 'Internal', '')).toBe('Gemini respondió con un error (500): Internal')
     expect(cleanKey(' AIza​xyz \n')).toBe('AIzaxyz')
   })
+
+  it('elige modelos que la llave sí tiene, prefiriendo los rápidos y gratis', async () => {
+    const { pickGeminiModels } = await import('../src/lib/recognize')
+    const gen = ['generateContent']
+    const models = [
+      { name: 'models/gemini-3-flash-preview', supportedGenerationMethods: gen },
+      { name: 'models/gemini-2.5-flash-image', supportedGenerationMethods: gen },
+      { name: 'models/gemini-3-pro', supportedGenerationMethods: gen },
+      { name: 'models/gemini-flash-latest', supportedGenerationMethods: gen },
+      { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] },
+      { name: 'models/gemini-3-flash-lite', supportedGenerationMethods: gen },
+    ]
+    expect(pickGeminiModels(models)).toEqual(['gemini-flash-latest', 'gemini-3-flash-preview', 'gemini-3-flash-lite'])
+  })
 })

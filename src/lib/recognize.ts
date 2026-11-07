@@ -95,15 +95,51 @@ const GEMINI_PROMPT = [
   'Si no hay nada legible, deja el texto vacío.',
 ].join('\n')
 
-/** Modelos con plan gratis, del preferido al de respaldo (Google cambia la lista seguido). */
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
+/** Modelos preferidos (Google cambia la lista seguido; se completa con los que tenga la llave). */
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']
+
+interface GeminiModelInfo {
+  name: string
+  supportedGenerationMethods?: string[]
+}
+
+/**
+ * Ordena los modelos que puede usar una llave: primero los preferidos, luego otros "flash"
+ * (rápidos y con plan gratis). Deja fuera los de imagen, voz, audio y en vivo.
+ */
+export function pickGeminiModels(models: GeminiModelInfo[]): string[] {
+  const usable = models
+    .filter((m) => (m.supportedGenerationMethods ?? ['generateContent']).includes('generateContent'))
+    .map((m) => m.name.replace(/^models\//, ''))
+    .filter((n) => /^gemini/.test(n) && !/image|tts|audio|live|embedding|thinking-exp|robotics|computer-use/.test(n))
+  const preferred = GEMINI_MODELS.filter((m) => usable.includes(m))
+  const others = usable
+    .filter((n) => !preferred.includes(n) && /flash/.test(n))
+    .sort((a, b) => Number(/lite/.test(a)) - Number(/lite/.test(b)) || b.localeCompare(a))
+  return [...preferred, ...others]
+}
+
+const modelCache = new Map<string, string[]>()
+
+async function listGeminiModels(key: string): Promise<string[]> {
+  const hit = modelCache.get(key)
+  if (hit) return hit
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } })
+  if (!res.ok) throw new RecognitionError(await geminiProblem(res))
+  const models = pickGeminiModels((await res.json()).models ?? [])
+  modelCache.set(key, models)
+  return models
+}
 
 /** Gemini (IA de Google): mira una imagen de los trazos. Tiene plan gratis. */
 async function viaGemini(strokes: StrokeEl[], cfg: Recognition): Promise<RecognitionResult> {
   const key = cleanKey(cfg.geminiKey)
   if (!key) throw new RecognitionError('Falta pegar la llave de Gemini en Ajustes.')
   const data = await blobToBase64(await strokesToPng(strokes))
-  for (const model of GEMINI_MODELS) {
+  const models = await listGeminiModels(key)
+  if (!models.length) throw new RecognitionError('Tu llave no tiene ningún modelo de Gemini que sirva para leer letra.')
+  let lastProblem = ''
+  for (const model of models) {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
@@ -125,13 +161,18 @@ async function viaGemini(strokes: StrokeEl[], cfg: Recognition): Promise<Recogni
         },
       }),
     })
-    if (res.status === 404) continue // ese modelo ya no existe: probamos el siguiente
+    // 404: el modelo ya no existe. 403: esta llave no tiene permiso para ese modelo. Probamos otro.
+    if (res.status === 404 || res.status === 403) {
+      lastProblem = await geminiProblem(res)
+      continue
+    }
     if (!res.ok) throw new RecognitionError(await geminiProblem(res))
     const json = await res.json()
     const raw: string = (json.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? '').join('')
     return parseGemini(raw)
   }
-  throw new RecognitionError('Ningún modelo de Gemini está disponible para esta llave.')
+  modelCache.delete(key)
+  throw new RecognitionError(lastProblem || 'Ningún modelo de Gemini está disponible para esta llave.')
 }
 
 /** Quita espacios y caracteres invisibles que a veces se cuelan al copiar y pegar. */
@@ -144,10 +185,10 @@ export function explainGemini(status: number, message: string, reason = ''): str
   const m = `${message} ${reason}`
   if (/API key not valid|API_KEY_INVALID/i.test(m)) return 'La llave no es válida. Cópiala otra vez completa desde aistudio.google.com/apikey.'
   if (/expired|API_KEY_EXPIRED/i.test(m)) return 'La llave ya venció. Crea una nueva en aistudio.google.com/apikey.'
-  if (/has not been used|is disabled|SERVICE_DISABLED|API_KEY_SERVICE_BLOCKED|blocked/i.test(m))
-    return 'La llave existe, pero la API de Gemini no está activada en su proyecto. Crea la llave desde aistudio.google.com/apikey (ahí se activa sola).'
-  if (/referer|referrer|API_KEY_HTTP_REFERRER_BLOCKED|ip address|API_KEY_IP_ADDRESS_BLOCKED|android|ios/i.test(m))
+  if (/referer|referrer|API_KEY_HTTP_REFERRER_BLOCKED|ip address|API_KEY_IP_ADDRESS_BLOCKED|API_KEY_ANDROID|API_KEY_IOS/i.test(m))
     return 'La llave tiene restricciones que no dejan usarla desde Trazo. En Google Cloud, quita las restricciones de la llave o permite aldohdezco.github.io.'
+  if (/has not been used|is disabled|SERVICE_DISABLED|API_KEY_SERVICE_BLOCKED/i.test(m))
+    return 'La llave existe, pero la API de Gemini no está activada en su proyecto. Crea la llave desde aistudio.google.com/apikey (ahí se activa sola).'
   if (/location is not supported|FAILED_PRECONDITION/i.test(m)) return 'Gemini no está disponible en tu país o cuenta. (' + message + ')'
   if (status === 429 || /quota|RESOURCE_EXHAUSTED/i.test(m)) {
     if (/limit: 0\b/.test(m)) return 'Esta llave no tiene conversiones gratis (Google pide activar facturación en ese proyecto).'
@@ -168,10 +209,9 @@ export async function testGeminiKey(key: string): Promise<{ ok: boolean; message
   try {
     const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': cleanKey(key) } })
     if (!res.ok) return { ok: false, message: await geminiProblem(res) }
-    const names: string[] = ((await res.json()).models ?? []).map((m: { name: string }) => m.name.replace('models/', ''))
-    const usable = GEMINI_MODELS.filter((m) => names.includes(m))
-    if (!usable.length) return { ok: false, message: 'La llave funciona, pero no tiene acceso a los modelos que usa Trazo.' }
-    return { ok: true, message: `¡La llave funciona! ✨ (modelo: ${usable[0]})` }
+    const usable = pickGeminiModels((await res.json()).models ?? [])
+    if (!usable.length) return { ok: false, message: 'La llave funciona, pero no tiene ningún modelo de Gemini que sirva para leer letra.' }
+    return { ok: true, message: `¡La llave funciona! ✨ (usará ${usable[0]})` }
   } catch {
     return { ok: false, message: 'No se pudo conectar con Google. Revisa el internet.' }
   }

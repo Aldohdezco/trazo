@@ -191,9 +191,13 @@ test('Gemini: usa el estilo que dice la IA y salta modelos que ya no existen', a
   let key = ''
   await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
     const url = route.request().url()
-    models.push(url.split('/models/')[1].split(':')[0])
     key = route.request().headers()['x-goog-api-key']
-    if (url.includes('gemini-2.5-flash:')) return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":{"message":"not found"}}' })
+    if (route.request().method() === 'GET') {
+      const list = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-image'].map((n) => ({ name: 'models/' + n, supportedGenerationMethods: ['generateContent'] }))
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: list }) })
+    }
+    models.push(url.split('/models/')[1].split(':')[0])
+    if (url.includes('gemini-2.5-flash:')) return route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":{"message":"Permission denied","status":"PERMISSION_DENIED"}}' })
     const body = { candidates: [{ content: { parts: [{ text: '{"texto":"Química orgánica","estilo":"mayusculas"}' }] } }] }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
   })
