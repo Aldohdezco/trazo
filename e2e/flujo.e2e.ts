@@ -186,7 +186,7 @@ test('escritura mágica, marcador sobre texto y búsqueda', async ({ page }, inf
   expect(errors).toEqual([])
 })
 
-test('Gemini: usa el estilo que dice la IA y salta modelos que ya no existen', async ({ page }) => {
+test('Gemini: usa el estilo que dice la IA y salta modelos saturados', async ({ page }) => {
   const models: string[] = []
   let key = ''
   await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
@@ -197,7 +197,7 @@ test('Gemini: usa el estilo que dice la IA y salta modelos que ya no existen', a
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: list }) })
     }
     models.push(url.split('/models/')[1].split(':')[0])
-    if (url.includes('gemini-2.5-flash:')) return route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":{"message":"Permission denied","status":"PERMISSION_DENIED"}}' })
+    if (url.includes('gemini-flash-latest:')) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":{"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}' })
     const body = { candidates: [{ content: { parts: [{ text: '{"texto":"Química orgánica","estilo":"mayusculas"}' }] } }] }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
   })
@@ -220,7 +220,7 @@ test('Gemini: usa el estilo que dice la IA y salta modelos que ya no existen', a
   await expect.poll(() => models.length).toBe(2)
   await expect(page.getByText('Leyendo tu letra')).toBeHidden()
 
-  expect(models).toEqual(['gemini-2.5-flash', 'gemini-flash-latest'])
+  expect(models).toEqual(['gemini-flash-latest', 'gemini-2.5-flash'])
   expect(key).toBe('gem-789')
   // Se guardó como texto con la fuente elegida para MAYÚSCULAS
   await page.waitForTimeout(800)

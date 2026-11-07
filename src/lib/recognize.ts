@@ -95,8 +95,11 @@ const GEMINI_PROMPT = [
   'Si no hay nada legible, deja el texto vacío.',
 ].join('\n')
 
-/** Modelos preferidos (Google cambia la lista seguido; se completa con los que tenga la llave). */
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']
+/** Modelos preferidos, en orden. Google retira modelos seguido: la lista se completa con los que tenga la llave. */
+const GEMINI_MODELS = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-flash-lite-latest', 'gemini-3.5-flash-lite']
+const LAST_MODEL_KEY = 'trazo:gemini-modelo'
+const GEMINI_TIMEOUT_MS = 25_000
+const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta'
 
 interface GeminiModelInfo {
   name: string
@@ -104,19 +107,37 @@ interface GeminiModelInfo {
 }
 
 /**
- * Ordena los modelos que puede usar una llave: primero los preferidos, luego otros "flash"
- * (rápidos y con plan gratis). Deja fuera los de imagen, voz, audio y en vivo.
+ * Ordena los modelos que puede usar una llave: el último que funcionó, luego los preferidos y luego
+ * otros "flash" (rápidos y con plan gratis). Deja fuera los de imagen, voz, audio, en vivo y "omni"
+ * (sin plan gratis), y los muy viejos que Google ya retiró.
  */
-export function pickGeminiModels(models: GeminiModelInfo[]): string[] {
+export function pickGeminiModels(models: GeminiModelInfo[], remembered?: string | null): string[] {
   const usable = models
     .filter((m) => (m.supportedGenerationMethods ?? ['generateContent']).includes('generateContent'))
     .map((m) => m.name.replace(/^models\//, ''))
-    .filter((n) => /^gemini/.test(n) && !/image|tts|audio|live|embedding|thinking-exp|robotics|computer-use/.test(n))
+    .filter((n) => /^gemini/.test(n) && !/image|tts|audio|live|embedding|thinking-exp|robotics|computer-use|omni|gemini-1\.|gemini-2\.0/.test(n))
   const preferred = GEMINI_MODELS.filter((m) => usable.includes(m))
   const others = usable
     .filter((n) => !preferred.includes(n) && /flash/.test(n))
     .sort((a, b) => Number(/lite/.test(a)) - Number(/lite/.test(b)) || b.localeCompare(a))
-  return [...preferred, ...others]
+  const ordered = [...preferred, ...others]
+  return remembered && ordered.includes(remembered) ? [remembered, ...ordered.filter((m) => m !== remembered)] : ordered
+}
+
+function rememberedModel(): string | null {
+  try {
+    return localStorage.getItem(LAST_MODEL_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberModel(model: string) {
+  try {
+    localStorage.setItem(LAST_MODEL_KEY, model)
+  } catch {
+    /* sin almacenamiento: no pasa nada */
+  }
 }
 
 const modelCache = new Map<string, string[]>()
@@ -124,11 +145,99 @@ const modelCache = new Map<string, string[]>()
 async function listGeminiModels(key: string): Promise<string[]> {
   const hit = modelCache.get(key)
   if (hit) return hit
-  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } })
+  const res = await fetch(`${GEMINI_API}/models?pageSize=200`, { headers: { 'x-goog-api-key': key } })
   if (!res.ok) throw new RecognitionError(await geminiProblem(res))
   const models = pickGeminiModels((await res.json()).models ?? [])
   modelCache.set(key, models)
   return models
+}
+
+type Parts = ({ text: string } | { inline_data: { mime_type: string; data: string } })[]
+
+type Attempt =
+  | { ok: true; text: string }
+  | { ok: false; status: number; problem: string; /** Vale la pena probar con otro modelo. */ next: boolean }
+
+/** Una llamada a un modelo, con límite de tiempo. */
+async function callGemini(key: string, model: string, parts: Parts, json: boolean): Promise<Attempt> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS)
+  try {
+    const res = await fetch(`${GEMINI_API}/models/${model}:generateContent`, {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          temperature: 0,
+          ...(json
+            ? {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                  type: 'OBJECT',
+                  properties: {
+                    texto: { type: 'STRING' },
+                    estilo: { type: 'STRING', enum: ['cursiva', 'molde', 'mayusculas'] },
+                  },
+                  required: ['texto', 'estilo'],
+                },
+              }
+            : {}),
+          // Sin "pensar": la transcripción es rápida y no gasta de más.
+          ...(model.startsWith('gemini-2.5') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+        },
+      }),
+    })
+    if (!res.ok) {
+      // 400/401 son problemas de la llave o de la petición: cambiar de modelo no ayuda.
+      const next = res.status !== 400 && res.status !== 401
+      return { ok: false, status: res.status, problem: await geminiProblem(res), next }
+    }
+    const body = await res.json()
+    const text: string = (body.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? '').join('')
+    return { ok: true, text }
+  } catch (err) {
+    const timedOut = (err as Error).name === 'AbortError'
+    return {
+      ok: false,
+      status: 0,
+      problem: timedOut ? 'Gemini tardó demasiado en contestar.' : 'No se pudo conectar con Google. Revisa el internet.',
+      next: timedOut,
+    }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Prueba modelo por modelo hasta que uno conteste: los gratis a veces están saturados (503),
+ * retirados (404), sin permiso (403) o sin cuota (429).
+ */
+async function runGemini(key: string, parts: Parts, json: boolean): Promise<{ model: string; text: string }> {
+  const models = pickGeminiModels(
+    (await listGeminiModels(key)).map((name) => ({ name })),
+    rememberedModel(),
+  )
+  if (!models.length) throw new RecognitionError('Tu llave no tiene ningún modelo de Gemini que sirva para leer letra.')
+  const failures: Attempt[] = []
+  for (const model of models) {
+    const r = await callGemini(key, model, parts, json)
+    if (r.ok) {
+      rememberModel(model)
+      return { model, text: r.text }
+    }
+    failures.push(r)
+    if (!r.next) throw new RecognitionError(r.problem)
+  }
+  modelCache.delete(key)
+  const statuses = failures.map((f) => (f.ok ? 200 : f.status))
+  if (statuses.every((s) => s === 503 || s === 500 || s === 0))
+    throw new RecognitionError('Gemini está muy ocupado ahorita. Intenta otra vez en un momento ♡')
+  const quota = failures.find((f) => !f.ok && f.status === 429)
+  if (quota && !quota.ok) throw new RecognitionError(quota.problem)
+  const last = failures[failures.length - 1]
+  throw new RecognitionError(last && !last.ok ? last.problem : 'Ningún modelo de Gemini está disponible para esta llave.')
 }
 
 /** Gemini (IA de Google): mira una imagen de los trazos. Tiene plan gratis. */
@@ -136,48 +245,13 @@ async function viaGemini(strokes: StrokeEl[], cfg: Recognition): Promise<Recogni
   const key = cleanKey(cfg.geminiKey)
   if (!key) throw new RecognitionError('Falta pegar la llave de Gemini en Ajustes.')
   const data = await blobToBase64(await strokesToPng(strokes))
-  const models = await listGeminiModels(key)
-  if (!models.length) throw new RecognitionError('Tu llave no tiene ningún modelo de Gemini que sirva para leer letra.')
-  let lastProblem = ''
-  for (const model of models) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents: [{ parts: [{ inline_data: { mime_type: 'image/png', data } }, { text: GEMINI_PROMPT }] }],
-        generationConfig: {
-          temperature: 0,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'OBJECT',
-            properties: {
-              texto: { type: 'STRING' },
-              estilo: { type: 'STRING', enum: ['cursiva', 'molde', 'mayusculas'] },
-            },
-            required: ['texto', 'estilo'],
-          },
-          // Sin "pensar": la transcripción es rápida y no gasta de más.
-          ...(model.startsWith('gemini-2.5') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
-        },
-      }),
-    })
-    // 404: el modelo ya no existe. 403: esta llave no tiene permiso para ese modelo. Probamos otro.
-    if (res.status === 404 || res.status === 403) {
-      lastProblem = await geminiProblem(res)
-      continue
-    }
-    if (!res.ok) throw new RecognitionError(await geminiProblem(res))
-    const json = await res.json()
-    const raw: string = (json.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? '').join('')
-    return parseGemini(raw)
-  }
-  modelCache.delete(key)
-  throw new RecognitionError(lastProblem || 'Ningún modelo de Gemini está disponible para esta llave.')
+  const { text } = await runGemini(key, [{ inline_data: { mime_type: 'image/png', data } }, { text: GEMINI_PROMPT }], true)
+  return parseGemini(text)
 }
 
 /** Quita espacios y caracteres invisibles que a veces se cuelan al copiar y pegar. */
 export function cleanKey(k: string): string {
-  return k.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, '')
+  return k.replace(/[\s​-‍⁠﻿]/g, '')
 }
 
 /** Traduce el error de Google a algo que se entienda (y conserva el mensaje original). */
@@ -190,10 +264,12 @@ export function explainGemini(status: number, message: string, reason = ''): str
   if (/has not been used|is disabled|SERVICE_DISABLED|API_KEY_SERVICE_BLOCKED/i.test(m))
     return 'La llave existe, pero la API de Gemini no está activada en su proyecto. Crea la llave desde aistudio.google.com/apikey (ahí se activa sola).'
   if (/location is not supported|FAILED_PRECONDITION/i.test(m)) return 'Gemini no está disponible en tu país o cuenta. (' + message + ')'
+  if (status === 503 || /high demand|overloaded|UNAVAILABLE/i.test(m)) return 'Gemini está muy ocupado ahorita. Intenta otra vez en un momento ♡'
   if (status === 429 || /quota|RESOURCE_EXHAUSTED/i.test(m)) {
     if (/limit: 0\b/.test(m)) return 'Esta llave no tiene conversiones gratis (Google pide activar facturación en ese proyecto).'
     return 'Se acabaron las conversiones gratis por ahora. Intenta en un rato ♡'
   }
+  if (status === 403) return 'Tu llave no tiene permiso para usar ese modelo de Gemini.'
   return `Gemini respondió con un error (${status})${message ? ': ' + message : ''}`
 }
 
@@ -204,16 +280,13 @@ async function geminiProblem(res: Response): Promise<string> {
   return explainGemini(res.status, err.message ?? '', reason)
 }
 
-/** Revisa una llave sin gastar conversiones: pide la lista de modelos. */
+/** Prueba la llave de verdad con un mensajito (gasta una conversión) y recuerda qué modelo sirvió. */
 export async function testGeminiKey(key: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': cleanKey(key) } })
-    if (!res.ok) return { ok: false, message: await geminiProblem(res) }
-    const usable = pickGeminiModels((await res.json()).models ?? [])
-    if (!usable.length) return { ok: false, message: 'La llave funciona, pero no tiene ningún modelo de Gemini que sirva para leer letra.' }
-    return { ok: true, message: `¡La llave funciona! ✨ (usará ${usable[0]})` }
-  } catch {
-    return { ok: false, message: 'No se pudo conectar con Google. Revisa el internet.' }
+    const { model } = await runGemini(cleanKey(key), [{ text: 'Responde solo: ok' }], false)
+    return { ok: true, message: `¡La llave funciona! ✨ (usará ${model})` }
+  } catch (err) {
+    return { ok: false, message: (err as Error).message }
   }
 }
 
