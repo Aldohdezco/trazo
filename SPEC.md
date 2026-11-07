@@ -123,7 +123,7 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
 |---|---|
 | Base | Vite + TypeScript |
 | Interfaz | Svelte 5 |
-| Lienzo | Canvas 2D propio: escena por capas, índice espacial (`rbush`) y renderizado solo de lo visible |
+| Lienzo | Canvas 2D propio: dos capas (contenido y trazo en vivo) y renderizado solo de lo visible. Si una nota llega a tener miles de elementos, se agrega un índice espacial (`rbush`) |
 | Trazos | `perfect-freehand` |
 | Almacenamiento | IndexedDB con `Dexie` |
 | PDF entrada | `pdf.js` (renderiza cada página a una imagen para anotar encima) |
@@ -144,7 +144,13 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
 3. **Fase 3, decorar:** stickers (recorte y paquete coquette), notas decoradas, portadas personalizadas, creador de fuentes con descarga `.ttf`.
 4. **Fase 4, extras:** importar y anotar PDFs, pantalla dividida, reconocimiento de figuras a mano.
 
-## 7. Pendientes por confirmar
+## 7. Estado
+
+- **Fase 1:** terminada (2026-11-07).
+  - El papel Cornell y el planner semanal se repiten por "hojas" tamaño carta dentro del lienzo infinito.
+  - Atajos de teclado en PC: V lazo, H mano, P pluma, L lápiz, B pincel, M marcador, E borrador, F figuras, R líneas, T texto; Ctrl+Z/Y, Ctrl+C/X/V, Ctrl+D, Supr.
+
+## 8. Pendientes por confirmar
 - [ ] Exportar a PDF: cortar el lienzo en hojas A4 o Carta automáticamente.
 - [ ] Proveedor de reconocimiento en la nube (se decide al empezar la Fase 2 tras probar los candidatos).
 - [ ] Sin fecha límite.

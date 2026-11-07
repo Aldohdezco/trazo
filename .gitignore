@@ -1,4 +1,7 @@
 node_modules/
 dist/
+dev-dist/
 .env*
 .DS_Store
+e2e/.resultados/
+playwright-report/
