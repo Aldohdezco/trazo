@@ -126,6 +126,7 @@
         <button class="btn primary" onclick={() => (newNote = { title: '', background: { ...notebook!.background } })}>
           <Icon name="mas" size={20} /> Nueva nota
         </button>
+        <button class="icon-btn" onclick={() => (app.settingsOpen = true)} aria-label="Ajustes" title="Ajustes"><Icon name="ajustes" /></button>
       </div>
     </header>
 

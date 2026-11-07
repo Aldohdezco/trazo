@@ -575,6 +575,7 @@
           title="Cambiar papel"><Icon name="papel" /></button
         >
         <button class="icon-btn" onclick={() => (showExport = true)} disabled={busy} aria-label="Exportar" title="Exportar"><Icon name="descargar" /></button>
+        <button class="icon-btn" onclick={() => (app.settingsOpen = true)} aria-label="Ajustes" title="Ajustes"><Icon name="ajustes" /></button>
       </div>
     </header>
 
