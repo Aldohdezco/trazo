@@ -148,7 +148,10 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
 
 - **Fase 2:** terminada (2026-11-07). Cambios respecto al plan:
   - **No hay reconocimiento local.** Ninguna tecnología del navegador lee bien español sin internet (la API nativa de Chrome solo existe en ChromeOS y solo en inglés). Sin internet o sin llaves, el Lápiz mágico deja los trazos como están y avisa.
-  - Proveedores disponibles (se eligen en Ajustes; las llaves se guardan solo en el dispositivo y no van en los respaldos): **MyScript** (lee los trazos directamente; recomendado) y **Google Cloud Vision** (lee una imagen de los trazos).
+  - Proveedores disponibles (se eligen en Ajustes; las llaves se guardan solo en el dispositivo y no van en los respaldos):
+    - **Gemini** (recomendado, gratis): lee una imagen de los trazos y además dice si la letra es cursiva, molde o mayúsculas. Si un modelo deja de existir, prueba el siguiente de una lista.
+    - **MyScript**: lee los trazos directamente; ~2,000 conversiones gratis al mes.
+    - **Google Cloud Vision**: OCR sobre una imagen; pide cuenta de facturación.
   - La búsqueda incluye títulos y todo el texto (escrito o convertido). **No** reconoce en segundo plano los trazos que no se convirtieron, para no gastar las peticiones gratis del servicio.
   - Si se sigue escribiendo con el Lápiz mágico justo a la derecha de un texto recién convertido, se agrega a ese mismo renglón.
 - **Fase 1:** terminada (2026-11-07).
@@ -157,5 +160,5 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
 
 ## 8. Pendientes por confirmar
 - [ ] Exportar a PDF: cortar el lienzo en hojas A4 o Carta automáticamente.
-- [ ] Proveedor de reconocimiento: falta registrar las llaves (MyScript recomendado) y probar con letra real.
+- [ ] Reconocimiento: falta pegar la llave de Gemini y probar con la letra real de ella.
 - [ ] Sin fecha límite.

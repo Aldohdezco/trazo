@@ -296,7 +296,7 @@
     }
     converting = true
     try {
-      const text = await recognize(strokes, $state.snapshot(app.settings.reconocimiento))
+      const { text, style: seen } = await recognize(strokes, $state.snapshot(app.settings.reconocimiento))
       if (!text) {
         toast('No logré leer eso. Tus trazos se quedan como están ♡')
         return
@@ -312,7 +312,7 @@
         commit(rest.map((e) => (e.id === prev.id ? grown : e)))
         lastMagic = { id: prev.id, time: Date.now() }
       } else {
-        const style = detectStyle(strokes.length, text)
+        const style = seen ?? detectStyle(strokes.length, text)
         const el = textFromStrokes(strokes, text, app.settings.fuentesEstilo[style])
         commit([...rest, el])
         if (magic) lastMagic = { id: el.id, time: Date.now() }

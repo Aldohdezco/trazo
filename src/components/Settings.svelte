@@ -30,6 +30,7 @@
 
   const PROVIDERS: { id: Recognition['proveedor']; label: string }[] = [
     { id: 'ninguno', label: 'Apagada' },
+    { id: 'gemini', label: 'Gemini (gratis) ⭐' },
     { id: 'myscript', label: 'MyScript' },
     { id: 'google', label: 'Google Vision' },
   ]
@@ -98,7 +99,16 @@
         <button class="chip" class:on={app.settings.reconocimiento.proveedor === p.id} onclick={() => setRecognition({ proveedor: p.id })}>{p.label}</button>
       {/each}
     </div>
-    {#if app.settings.reconocimiento.proveedor === 'myscript'}
+    {#if app.settings.reconocimiento.proveedor === 'gemini'}
+      <label class="field">
+        <span>Llave de Gemini (API key)</span>
+        <input class="input" type="password" autocomplete="off" value={app.settings.reconocimiento.geminiKey} onchange={(e) => setRecognition({ geminiKey: e.currentTarget.value.trim() })} />
+      </label>
+      <p class="muted small">
+        Gratis: entra a <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> con una cuenta de Google, toca «Create API key» y pégala aquí.
+        Lee muy bien la letra corrida y reconoce si escribiste en cursiva.
+      </p>
+    {:else if app.settings.reconocimiento.proveedor === 'myscript'}
       <label class="field">
         <span>Application key</span>
         <input class="input" type="password" autocomplete="off" value={app.settings.reconocimiento.myscriptApp} onchange={(e) => setRecognition({ myscriptApp: e.currentTarget.value.trim() })} />

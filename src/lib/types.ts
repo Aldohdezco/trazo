@@ -158,7 +158,8 @@ export type Theme = 'auto' | 'claro' | 'oscuro'
 export type HandStyle = 'cursiva' | 'molde' | 'mayusculas'
 
 export interface Recognition {
-  proveedor: 'ninguno' | 'myscript' | 'google'
+  proveedor: 'ninguno' | 'gemini' | 'myscript' | 'google'
+  geminiKey: string
   myscriptApp: string
   myscriptHmac: string
   googleKey: string

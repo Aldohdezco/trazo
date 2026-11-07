@@ -62,3 +62,12 @@ describe('MyScript', () => {
     expect(await myscriptHmac('{"a":1}', 'appkey', 'hmackey')).toBe(expected)
   })
 })
+
+describe('Gemini', () => {
+  it('lee el JSON con texto y estilo', async () => {
+    const { parseGemini } = await import('../src/lib/recognize')
+    expect(parseGemini('{"texto":" Hola, bonita ","estilo":"cursiva"}')).toEqual({ text: 'Hola, bonita', style: 'cursiva' })
+    expect(parseGemini('{"texto":"x","estilo":"rara"}')).toEqual({ text: 'x', style: undefined })
+    expect(parseGemini('texto suelto')).toEqual({ text: 'texto suelto' })
+  })
+})

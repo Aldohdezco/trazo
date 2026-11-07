@@ -37,7 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ultimoRespaldo: null,
   coloresFavoritos: [],
   hojaPdf: 'carta',
-  reconocimiento: { proveedor: 'ninguno', myscriptApp: '', myscriptHmac: '', googleKey: '' },
+  reconocimiento: { proveedor: 'ninguno', geminiKey: '', myscriptApp: '', myscriptHmac: '', googleKey: '' },
   fuentesEstilo: { cursiva: 'dancing', molde: 'nunito', mayusculas: 'playfair' },
 }
 
@@ -47,6 +47,9 @@ export async function loadSettings(): Promise<Settings> {
   for (const r of rows) {
     if (r.key in s) (s as unknown as Record<string, unknown>)[r.key] = r.value
   }
+  // Ajustes guardados por versiones anteriores pueden no traer campos nuevos.
+  s.reconocimiento = { ...DEFAULT_SETTINGS.reconocimiento, ...s.reconocimiento }
+  s.fuentesEstilo = { ...DEFAULT_SETTINGS.fuentesEstilo, ...s.fuentesEstilo }
   return s
 }
 

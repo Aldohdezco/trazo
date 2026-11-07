@@ -185,3 +185,50 @@ test('escritura mágica, marcador sobre texto y búsqueda', async ({ page }, inf
 
   expect(errors).toEqual([])
 })
+
+test('Gemini: usa el estilo que dice la IA y salta modelos que ya no existen', async ({ page }) => {
+  const models: string[] = []
+  let key = ''
+  await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
+    const url = route.request().url()
+    models.push(url.split('/models/')[1].split(':')[0])
+    key = route.request().headers()['x-goog-api-key']
+    if (url.includes('gemini-2.5-flash:')) return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":{"message":"not found"}}' })
+    const body = { candidates: [{ content: { parts: [{ text: '{"texto":"Química orgánica","estilo":"mayusculas"}' }] } }] }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  })
+
+  await page.goto('./')
+  await page.getByRole('button', { name: 'Ajustes' }).click()
+  await page.getByRole('button', { name: /Gemini/ }).click()
+  await page.getByLabel('Llave de Gemini (API key)').fill('gem-789')
+  await page.getByLabel('Llave de Gemini (API key)').blur()
+  await page.getByRole('combobox', { name: 'Cuando escribo en MAYÚSCULAS' }).selectOption('specialelite')
+  await page.getByRole('button', { name: 'Cerrar' }).click()
+
+  await page.getByRole('button', { name: 'Nuevo cuaderno' }).click()
+  await page.getByRole('button', { name: 'Crear cuaderno' }).click()
+  await page.getByRole('button', { name: 'Nueva nota' }).click()
+  await page.getByRole('button', { name: 'Crear nota' }).click()
+  const box = (await page.locator('.stage').boundingBox())!
+  await page.getByRole('button', { name: 'Lápiz mágico' }).click()
+  await drag(page, Array.from({ length: 12 }, (_, i) => [box.x + 150 + i * 15, box.y + 200 + (i % 2) * 30] as [number, number]))
+  await expect.poll(() => models.length).toBe(2)
+  await expect(page.getByText('Leyendo tu letra')).toBeHidden()
+
+  expect(models).toEqual(['gemini-2.5-flash', 'gemini-flash-latest'])
+  expect(key).toBe('gem-789')
+  // Se guardó como texto con la fuente elegida para MAYÚSCULAS
+  await page.waitForTimeout(800)
+  const els = await page.evaluate(
+    () =>
+      new Promise<unknown[]>((res) => {
+        const req = indexedDB.open('trazo')
+        req.onsuccess = () => {
+          const tx = req.result.transaction('contents').objectStore('contents').getAll()
+          tx.onsuccess = () => res(tx.result.flatMap((c: { elements: unknown[] }) => c.elements))
+        }
+      }),
+  )
+  expect(els).toEqual([expect.objectContaining({ type: 'text', text: 'Química orgánica', font: 'specialelite' })])
+})
