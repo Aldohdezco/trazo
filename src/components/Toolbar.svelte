@@ -71,6 +71,16 @@
         <span class="sr-only">Grosor</span>
         <input type="range" min={pen.min} max={pen.max} step="1" value={opts.sizes[pen.id]} oninput={(e) => setSize(pen.id, +e.currentTarget.value)} />
       </label>
+      {#if opts.tool === 'marcador'}
+        <span class="sep"></span>
+        <button
+          class="chip"
+          class:on={opts.markerMagic}
+          aria-pressed={opts.markerMagic}
+          title="Se acomoda parejito detrás de la letra"
+          onclick={() => (opts.markerMagic = !opts.markerMagic)}>✨ Mágico</button
+        >
+      {/if}
     {:else if opts.tool === 'magica'}
       <ColorRow value={opts.color} colors={INK_COLORS} onpick={(c) => (opts.color = c)} />
       <span class="sep"></span>

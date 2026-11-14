@@ -6,6 +6,7 @@ import { layoutText, measureWith, mergeHighlights, rangesUnder } from './text'
 import { onImageLoaded } from './images'
 import { drawElement, drawElements, drawLine, drawStroke, shapePath, strokeOutline } from './render'
 import { recognizeShape } from './shapes'
+import { straightenMarker } from './magicMarker'
 
 export type Tool = 'mano' | 'lazo' | 'magica' | PenTool | 'borrador' | 'figura' | 'linea' | 'texto'
 
@@ -13,6 +14,8 @@ export interface ToolOptions {
   tool: Tool
   color: string
   markerColor: string
+  /** Marcatextos mágico: el trazo se endereza en una franja pareja detrás de la letra. */
+  markerMagic: boolean
   sizes: Record<PenTool, number>
   eraserSize: number
   eraserMode: 'trazo' | 'parcial'
@@ -766,6 +769,11 @@ export class Engine {
         const highlighted = g.tool === 'marcador' ? this.highlightTexts(el) : null
         if (highlighted) {
           this.commit(highlighted)
+          break
+        }
+        const band = g.tool === 'marcador' && this.opts.markerMagic ? straightenMarker(el, this.elements, uid) : null
+        if (band) {
+          this.commit(band)
           break
         }
         this.commit([...this.elements, el])

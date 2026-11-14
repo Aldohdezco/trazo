@@ -48,6 +48,7 @@
     tool: 'pluma',
     color: '#2b2328',
     markerColor: '#ffd1dc',
+    markerMagic: true,
     sizes: { pluma: 4, lapiz: 3, pincel: 12, marcador: 22 },
     eraserSize: 28,
     eraserMode: 'trazo',
