@@ -111,6 +111,7 @@ function insertBehind(elements: El[], add: El[], touched: number[]): El[] {
  * - subrayado: línea recta pareja debajo del renglón.
  * - marco: recuadro redondeado alrededor del renglón (solo el borde).
  * - contorno: halo que sigue la forma de cada letra tocada.
+ * - borde: el mismo halo pero hueco, solo la orilla (sin fondo).
  * Devuelve la lista de elementos ya resaltada, o null si el trazo es muy cortito.
  */
 export function applyHighlighter(marker: StrokeEl, elements: El[], mode: HighlightStyle, newId: () => string): El[] | null {
@@ -122,6 +123,17 @@ export function applyHighlighter(marker: StrokeEl, elements: El[], mode: Highlig
     const copies: StrokeEl[] = g.touched.map((idx) => {
       const s = elements[idx] as StrokeEl
       return { ...s, id: newId(), tool: 'marcador', color: marker.color, size: round(s.size + halo * 2), pressure: false }
+    })
+    return insertBehind(elements, copies, g.touched)
+  }
+
+  if (mode === 'borde' && g.touched.length) {
+    const gap = Math.max(4, marker.size * 0.25)
+    const ring = round(Math.max(2.5, marker.size * 0.12))
+    const group = newId()
+    const copies: StrokeEl[] = g.touched.map((idx) => {
+      const s = elements[idx] as StrokeEl
+      return { ...s, id: newId(), tool: 'marcador', color: marker.color, size: round(s.size + (gap + ring) * 2), pressure: false, ring, group }
     })
     return insertBehind(elements, copies, g.touched)
   }
@@ -167,7 +179,7 @@ export function applyHighlighter(marker: StrokeEl, elements: El[], mode: Highlig
     return [...elements, box]
   }
 
-  // Fondo (y contorno cuando no hay letra debajo): franja recta y pareja.
+  // Fondo (y contorno/borde cuando no hay letra debajo): franja recta y pareja.
   const points: number[] = []
   const count = Math.max(2, Math.ceil((g.uMax - g.uMin) / 4))
   for (let i = 0; i <= count; i++) {

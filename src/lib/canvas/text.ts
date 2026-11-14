@@ -111,7 +111,7 @@ export function measureWith(el: TextEl, s: string): number {
 
 /** Agrega rangos resaltados: lo nuevo tapa lo viejo y los rangos vecinos del mismo color se unen. */
 export function mergeHighlights(existing: Highlight[], added: Highlight[]): Highlight[] {
-  // Cada modo (fondo, subrayado, marco, contorno) se combina por separado: pueden convivir.
+  // Cada modo (fondo, subrayado, marco, contorno, borde) se combina por separado: pueden convivir.
   const styles = new Set([...existing, ...added].map((h) => h.style ?? 'fondo'))
   if (styles.size > 1) {
     return [...styles].flatMap((st) =>

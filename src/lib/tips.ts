@@ -16,7 +16,7 @@ export const TIPS: Record<string, Tip> = {
   Lápiz: { name: 'Lápiz', desc: 'Trazo delgadito con textura de lápiz de verdad, ideal para bocetos.' },
   Pincel: { name: 'Pincel', desc: 'Trazo que se hace grueso y delgado según la velocidad, como pincel de caligrafía.' },
   Marcador: { name: 'Marcador', desc: 'Resaltador libre: queda tal como lo trazas, transparente encima de lo que pasas.' },
-  'Marcatextos mágico': { name: 'Marcatextos mágico ✨', desc: 'Pásalo por tu letra o un texto y se acomoda parejito: de fondo, subrayado, como marco o iluminando el contorno de las letras.' },
+  'Marcatextos mágico': { name: 'Marcatextos mágico ✨', desc: 'Pásalo por tu letra o un texto y se acomoda parejito: de fondo, subrayado, como marco, iluminando el contorno de las letras o solo su borde, sin fondo.' },
   Lápices: { name: 'Estuche de lápices', desc: 'Pluma, pluma fina, lápiz, crayón, pincel, caligrafía, acuarela, neón y brillitos. Elige el que quieras arriba.' },
   'Pluma fina': { name: 'Pluma fina', desc: 'Línea delgadita y pareja, como plumón de punta fina. Ideal para apuntes.' },
   Crayón: { name: 'Crayón', desc: 'Trazo gordito con textura de crayola, con huequitos del papel.' },

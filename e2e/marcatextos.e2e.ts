@@ -10,7 +10,7 @@ async function drag(page: Page, pts: [number, number][]) {
 function elements(page: Page) {
   return page.evaluate(
     () =>
-      new Promise<{ type: string; tool?: string; shape?: string; points?: number[]; size?: number; highlights?: { style?: string }[] }[]>((res) => {
+      new Promise<{ type: string; tool?: string; shape?: string; points?: number[]; size?: number; ring?: number; highlights?: { style?: string }[] }[]>((res) => {
         const req = indexedDB.open('trazo')
         req.onsuccess = () => {
           const tx = req.result.transaction('contents').objectStore('contents').getAll()
@@ -34,12 +34,12 @@ test('marcatextos mágico: fondo, subrayado, marco y contorno sobre letra a mano
   const at = (x: number, y: number): [number, number] => [b.x + x, b.y + y]
 
   // Cuatro renglones de "letra a mano"
-  const rows = [150, 250, 350, 450]
+  const rows = [150, 250, 350, 450, 550]
   for (const y0 of rows) await drag(page, Array.from({ length: 36 }, (_, i) => at(120 + i * 6, y0 + Math.sin(i * 0.9) * 13 + (i % 9 === 0 ? -20 : 0))))
 
   await page.getByRole('button', { name: 'Marcatextos mágico' }).click()
-  for (const [i, mode] of ['Fondo', 'Subrayar', 'Marco', 'Contorno de letras'].entries()) {
-    await page.getByRole('radio', { name: mode }).click()
+  for (const [i, mode] of ['Fondo', 'Subrayar', 'Marco', 'Contorno de letras', 'Contorno sin fondo'].entries()) {
+    await page.getByRole('radio', { name: mode, exact: true }).click()
     await drag(page, Array.from({ length: 30 }, (_, k) => at(110 + k * 8, rows[i] - 4 + Math.sin(k * 0.6) * 8)))
   }
   await page.waitForTimeout(600)
@@ -51,7 +51,9 @@ test('marcatextos mágico: fondo, subrayado, marco y contorno sobre letra a mano
   // La franja de fondo va antes (detrás) de su renglón
   expect(els[0]).toMatchObject({ type: 'stroke', tool: 'marcador' })
   // Contorno: un halo (marcador) por la letra del cuarto renglón
-  expect(els.filter((e) => e.type === 'stroke' && e.tool === 'marcador')).toHaveLength(2)
+  expect(els.filter((e) => e.type === 'stroke' && e.tool === 'marcador' && !e.ring)).toHaveLength(2)
+  // Contorno sin fondo: borde hueco por la letra del quinto renglón
+  expect(els.filter((e) => e.type === 'stroke' && e.ring)).toHaveLength(1)
 })
 
 test('marcatextos mágico sobre texto: los modos conviven', async ({ page }, info) => {
@@ -61,16 +63,18 @@ test('marcatextos mágico sobre texto: los modos conviven', async ({ page }, inf
   await page.keyboard.type('Fotosíntesis y respiración')
   await page.getByRole('button', { name: 'Listo' }).click()
   await page.getByRole('button', { name: 'Marcatextos mágico' }).click()
-  await page.getByRole('radio', { name: 'Fondo' }).click()
+  await page.getByRole('radio', { name: 'Fondo', exact: true }).click()
   await drag(page, [[b.x + 115, b.y + 200], [b.x + 260, b.y + 202]])
-  await page.getByRole('radio', { name: 'Subrayar' }).click()
+  await page.getByRole('radio', { name: 'Subrayar', exact: true }).click()
   await drag(page, [[b.x + 115, b.y + 202], [b.x + 400, b.y + 200]])
-  await page.getByRole('radio', { name: 'Contorno de letras' }).click()
+  await page.getByRole('radio', { name: 'Contorno de letras', exact: true }).click()
   await drag(page, [[b.x + 300, b.y + 200], [b.x + 440, b.y + 201]])
+  await page.getByRole('radio', { name: 'Contorno sin fondo', exact: true }).click()
+  await drag(page, [[b.x + 115, b.y + 200], [b.x + 200, b.y + 201]])
   await page.waitForTimeout(500)
   await page.screenshot({ path: info.outputPath('1-texto.png') })
   const [text] = (await elements(page)).filter((e) => e.type === 'text')
-  expect(new Set(text.highlights!.map((h) => h.style ?? 'fondo'))).toEqual(new Set(['fondo', 'subrayado', 'contorno']))
+  expect(new Set(text.highlights!.map((h) => h.style ?? 'fondo'))).toEqual(new Set(['fondo', 'subrayado', 'contorno', 'borde']))
 })
 
 test('estuche de lápices: todos dibujan', async ({ page }, info) => {
@@ -88,7 +92,7 @@ test('estuche de lápices: todos dibujan', async ({ page }, info) => {
   // El botón del estuche recuerda el último lápiz
   await page.getByRole('button', { name: 'Borrador' }).click()
   await page.getByRole('button', { name: 'Lápices' }).click()
-  await expect(page.getByRole('radio', { name: 'Brillitos' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('radio', { name: 'Brillitos', exact: true })).toHaveAttribute('aria-checked', 'true')
 })
 
 test('lápiz mágico con letra fija: todo se convierte en cursiva', async ({ page }) => {

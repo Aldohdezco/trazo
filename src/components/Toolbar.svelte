@@ -37,6 +37,7 @@
     { id: 'subrayado', label: 'Subrayar' },
     { id: 'marco', label: 'Marco' },
     { id: 'contorno', label: 'Contorno de letras' },
+    { id: 'borde', label: 'Contorno sin fondo' },
   ]
 
   const HL_COLORS = [...MARKER_COLORS, '#f29bb5', '#b88ee0', '#7aa7e0', '#6cc4a4', '#f2b25c', '#e46a5e']

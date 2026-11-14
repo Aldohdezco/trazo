@@ -67,6 +67,12 @@ export interface StrokeEl {
   points: number[]
   /** true si la presión viene del lápiz; si no, se simula por velocidad. */
   pressure: boolean
+  /**
+   * Contorno hueco del marcatextos mágico: grosor de la orilla. Solo se pinta el borde
+   * del trazo; los que comparten `group` se unen en un solo contorno limpio.
+   */
+  ring?: number
+  group?: string
 }
 
 export type ShapeKind = 'rect' | 'redondeado' | 'elipse' | 'triangulo' | 'rombo' | 'estrella' | 'corazon'
@@ -114,8 +120,8 @@ export type BuiltinFontId =
 /** Fuente incluida, o una creada por ella en el taller (`custom:<id>`). */
 export type FontId = BuiltinFontId | `custom:${string}`
 
-/** Cómo resalta el marcatextos mágico: franja de fondo, subrayado, marco o contorno de las letras. */
-export type HighlightStyle = 'fondo' | 'subrayado' | 'marco' | 'contorno'
+/** Cómo resalta el marcatextos mágico: franja de fondo, subrayado, marco, contorno de las letras o solo su borde. */
+export type HighlightStyle = 'fondo' | 'subrayado' | 'marco' | 'contorno' | 'borde'
 
 export interface Highlight {
   /** Rango de caracteres [start, end) dentro de `text`. */

@@ -96,4 +96,13 @@ describe('modos del marcatextos mágico', () => {
     expect(halos.map((h) => h.size)).toEqual([4 + 22 * 0.35 * 2, 4 + 22 * 0.35 * 2, 4 + 22 * 0.35 * 2].map((v) => Math.round(v * 100) / 100))
     expect(out.slice(3).map((e) => e.id)).toEqual(['w1', 'w2', 'alta'])
   })
+
+  it('borde: contornos huecos, unidos en un grupo, detrás de las letras', async () => {
+    const { applyHighlighter } = await import('../src/lib/canvas/magicMarker')
+    const out = applyHighlighter(wobbly(), [...word], 'borde', id)!
+    const rings = out.slice(0, 3) as StrokeEl[]
+    expect(rings.every((r) => r.tool === 'marcador' && r.ring! > 0 && r.size > r.ring! * 2 + 4)).toBe(true)
+    expect(new Set(rings.map((r) => r.group)).size).toBe(1)
+    expect(out.slice(3).map((e) => e.id)).toEqual(['w1', 'w2', 'alta'])
+  })
 })

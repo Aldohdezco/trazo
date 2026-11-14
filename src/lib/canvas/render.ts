@@ -114,6 +114,95 @@ function grain(ctx: CanvasRenderingContext2D, color: string, coarse = false): Ca
 }
 
 const coreCache = new WeakMap<StrokeEl, Path2D>()
+const innerCache = new WeakMap<StrokeEl, Path2D>()
+
+let ringCanvas: HTMLCanvasElement | null = null
+
+/**
+ * Pinta solo la orilla de una figura: dibuja `outer` en una capa aparte, le recorta `inner`
+ * y pega el resultado. Así varias figuras encimadas forman un solo borde, sin rayas por dentro.
+ * `local` es el área a cubrir en las coordenadas actuales del contexto.
+ */
+function paintRing(
+  ctx: CanvasRenderingContext2D,
+  local: Rect,
+  color: string,
+  alpha: number,
+  outer: (g: CanvasRenderingContext2D) => void,
+  inner: (g: CanvasRenderingContext2D) => void,
+) {
+  const m = ctx.getTransform()
+  const xs: number[] = []
+  const ys: number[] = []
+  for (const [x, y] of [
+    [local.x, local.y],
+    [local.x + local.w, local.y],
+    [local.x, local.y + local.h],
+    [local.x + local.w, local.y + local.h],
+  ]) {
+    xs.push(m.a * x + m.c * y + m.e)
+    ys.push(m.b * x + m.d * y + m.f)
+  }
+  const dx = Math.max(0, Math.floor(Math.min(...xs)))
+  const dy = Math.max(0, Math.floor(Math.min(...ys)))
+  const w = Math.min(ctx.canvas.width, Math.ceil(Math.max(...xs))) - dx
+  const h = Math.min(ctx.canvas.height, Math.ceil(Math.max(...ys))) - dy
+  if (w <= 0 || h <= 0) return
+  ringCanvas ??= document.createElement('canvas')
+  if (ringCanvas.width < w) ringCanvas.width = w
+  if (ringCanvas.height < h) ringCanvas.height = h
+  const g = ringCanvas.getContext('2d')!
+  g.setTransform(1, 0, 0, 1, 0, 0)
+  g.clearRect(0, 0, w, h)
+  g.setTransform(m.a, m.b, m.c, m.d, m.e - dx, m.f - dy)
+  g.fillStyle = color
+  g.strokeStyle = color
+  g.globalCompositeOperation = 'source-over'
+  outer(g)
+  g.globalCompositeOperation = 'destination-out'
+  g.fillStyle = '#000'
+  g.strokeStyle = '#000'
+  inner(g)
+  g.globalCompositeOperation = 'source-over'
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.globalAlpha = alpha
+  ctx.drawImage(ringCanvas, 0, 0, w, h, dx, dy, w, h)
+  ctx.restore()
+}
+
+/** Contorno hueco (marcatextos mágico, modo "borde") de uno o varios trazos unidos. */
+function drawRings(ctx: CanvasRenderingContext2D, els: StrokeEl[], opts: DrawOptions): void {
+  let area: Rect | null = null
+  for (const el of els) {
+    const b = elBounds(el)
+    if (!area) {
+      area = { ...b }
+      continue
+    }
+    const x = Math.min(area.x, b.x)
+    const y = Math.min(area.y, b.y)
+    area = { x, y, w: Math.max(area.x + area.w, b.x + b.w) - x, h: Math.max(area.y + area.h, b.y + b.h) - y }
+  }
+  if (!area) return
+  const pad = 4
+  paintRing(
+    ctx,
+    { x: area.x - pad, y: area.y - pad, w: area.w + pad * 2, h: area.h + pad * 2 },
+    els[0].color,
+    opts.darkPaper ? 0.75 : 0.9,
+    (g) => els.forEach((el) => g.fill(strokePath(el))),
+    (g) =>
+      els.forEach((el) => {
+        let p = innerCache.get(el)
+        if (!p) {
+          p = strokeOutline(el.points, 'marcador', Math.max(1, el.size - (el.ring ?? 2) * 2), false, true)
+          innerCache.set(el, p)
+        }
+        g.fill(p)
+      }),
+  )
+}
 
 /** Brillitos repartidos a lo largo del trazo (siempre en los mismos lugares). */
 function drawGlitter(ctx: CanvasRenderingContext2D, el: StrokeEl) {
@@ -145,6 +234,10 @@ export interface DrawOptions {
 }
 
 export function drawStroke(ctx: CanvasRenderingContext2D, el: StrokeEl, opts: DrawOptions, path = strokePath(el)) {
+  if (el.ring) {
+    drawRings(ctx, [el], opts)
+    return
+  }
   ctx.save()
   switch (el.tool) {
     case 'marcador':
@@ -379,6 +472,38 @@ function drawText(ctx: CanvasRenderingContext2D, el: TextEl) {
               ctx.textAlign = 'left'
               ctx.strokeText(line.slice(a, b), x0, midY)
               break
+            case 'borde': {
+              // Solo la orilla del halo: hueco por dentro, la letra queda limpia.
+              const piece = line.slice(a, b)
+              const outerW = el.size * 0.34
+              const ringW = Math.max(1.5, el.size * 0.07)
+              const font = ctx.font
+              const prep = (g: CanvasRenderingContext2D) => {
+                g.font = font
+                g.textBaseline = 'middle'
+                g.textAlign = 'left'
+                g.lineJoin = 'round'
+                g.lineCap = 'round'
+              }
+              paintRing(
+                ctx,
+                { x: x0 - outerW, y: top + lh * i - outerW, w: x1 - x0 + outerW * 2, h: lh + outerW * 2 },
+                h.color,
+                1,
+                (g) => {
+                  prep(g)
+                  g.lineWidth = outerW
+                  g.strokeText(piece, x0, midY)
+                },
+                (g) => {
+                  prep(g)
+                  g.lineWidth = Math.max(0.5, outerW - ringW * 2)
+                  g.strokeText(piece, x0, midY)
+                  g.fillText(piece, x0, midY)
+                },
+              )
+              break
+            }
           }
           ctx.restore()
         }
@@ -437,9 +562,19 @@ export function drawElement(ctx: CanvasRenderingContext2D, el: El, opts: DrawOpt
 
 /** Dibuja los elementos que caen dentro de `visible` (coordenadas del mundo). */
 export function drawElements(ctx: CanvasRenderingContext2D, els: El[], visible: Rect | null, opts: DrawOptions, skip?: Set<string>) {
+  let doneGroups: Set<string> | null = null
   for (const el of els) {
     if (skip?.has(el.id)) continue
     if (visible && !rectsIntersect(elBounds(el), visible)) continue
+    if (el.type === 'stroke' && el.ring && el.group) {
+      // Bordes huecos del mismo pase: se dibujan juntos para que formen un solo contorno.
+      doneGroups ??= new Set()
+      if (doneGroups.has(el.group)) continue
+      doneGroups.add(el.group)
+      const members = els.filter((e): e is StrokeEl => e.type === 'stroke' && e.group === el.group && !!e.ring && !skip?.has(e.id))
+      drawRings(ctx, members, opts)
+      continue
+    }
     drawElement(ctx, el, opts)
   }
 }
