@@ -146,6 +146,10 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
 
 ## 7. Estado
 
+- **Fase 4:** terminada (2026-11-14). Cambios respecto al plan:
+  - PDF: cada página se convierte en una imagen fija (bloqueada) dentro de la nota, para escribir y resaltar encima. Se importa desde el cuaderno (botón «PDF», crea una nota nueva) o desde la nota (botón de imagen, o arrastrando el archivo en la PC). Las páginas no se mueven con el lazo por accidente: se eligen con doble toque. Máximo 80 páginas por PDF.
+  - Pantalla dividida: dos notas lado a lado (o una arriba de otra en vertical), con divisor que se arrastra. En lugar de arrastrar elementos de un lado a otro, se seleccionan con el lazo y se usa «Copiar al otro lado».
+  - Figuras a mano: al terminar un trazo, si se deja el lápiz quieto un momento, se endereza en línea, círculo/óvalo, triángulo, rectángulo o rombo. Un trazo rápido se queda como está.
 - **Fase 3:** terminada (2026-11-14). Cambios respecto al plan:
   - Stickers: 26 incluidos (moños, corazones, flores, brillitos, washi, marcos) y los propios se hacen con el lazo → «Guardar como sticker», con o sin borde blanco troquelado.
   - Notas decoradas: tarjetitas con color, adorno (moño, cinta, chincheta, corazón, encaje o nada) y texto adentro; se editan con doble toque o con el lápiz de la barra.
@@ -167,3 +171,4 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
 - [ ] Exportar a PDF: cortar el lienzo en hojas A4 o Carta automáticamente.
 - [ ] Reconocimiento: falta pegar la llave de Gemini y probar con la letra real de ella.
 - [ ] Sin fecha límite.
+- [ ] Probar todo en el iPad y la tablet Android reales con el lápiz genérico.

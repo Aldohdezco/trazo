@@ -11,6 +11,7 @@
   import { addSticker, db, getNote, getNotebook, loadContent, putBlob, saveContent, updateNote } from '../lib/db'
   import { exportPdf, exportPng, makeThumbnail, renderRegion, saveFile } from '../lib/export'
   import { makeSticker } from '../lib/stickerMaker'
+  import { PDF_PAGE_W, isPdf, pdfToPages } from '../lib/pdfImport'
   import type { Background, DecoEl, El, ImageEl, Note, Rect, StrokeEl, TextEl } from '../lib/types'
   import { blobToStored, debounce, softFill, uid } from '../lib/util'
   import ActionSheet, { type Action } from './ActionSheet.svelte'
@@ -18,11 +19,26 @@
   import DecoEditor from './DecoEditor.svelte'
   import Icon from './Icon.svelte'
   import StickerDrawer from './StickerDrawer.svelte'
+  import NotePicker from './NotePicker.svelte'
   import Modal from './Modal.svelte'
   import PaperPicker from './PaperPicker.svelte'
   import Toolbar from './Toolbar.svelte'
 
-  let { id }: { id: string } = $props()
+  let {
+    id,
+    pane,
+    active = true,
+    onactivate,
+    onsend,
+  }: {
+    id: string
+    /** En pantalla dividida: qué lado ocupa esta nota. */
+    pane?: 'a' | 'b'
+    /** Solo el lado activo responde al teclado. */
+    active?: boolean
+    onactivate?: () => void
+    onsend?: (els: El[]) => void
+  } = $props()
 
   /** Zona de la portada cuando se diseña la portada de un cuaderno. */
   const COVER_FRAME: Rect = { x: 0, y: 0, w: 600, h: 800 }
@@ -81,6 +97,9 @@
   let fileInput: HTMLInputElement
   let clipboard: El[] = []
   let busy = $state(false)
+  let busyText = $state('Un momentito… ✨')
+  let picking = $state(false)
+  let dragOver = $state(false)
 
   let showStickers = $state(false)
   let decoEditing = $state<{ el: DecoEl; isNew: boolean } | null>(null)
@@ -240,7 +259,10 @@
     engine.setElements(current)
     if (n.view) engine.setView(n.view, false)
     else if (n.kind === 'portada') engine.fitRect(COVER_FRAME, 1.5)
-    else if (current.length) engine.fitContent(1)
+    else if (current.some((e) => e.type === 'image' && e.locked)) {
+      const page = current.find((e) => e.type === 'image' && e.locked) as ImageEl
+      engine.fitWidth(page, 1.5)
+    } else if (current.length) engine.fitContent(1)
     zoom = engine.view.zoom
   })
 
@@ -407,6 +429,25 @@
     commit(toFront ? [...rest, ...sel] : [...sel, ...rest])
   }
 
+  // ---------- Pantalla dividida ----------
+
+  /** Recibe copias de elementos enviados desde la otra nota y las pone al centro. */
+  export function receive(els: El[]) {
+    if (!engine || !els.length) return
+    const b = contentBounds(els)!
+    const [cx, cy] = engine.viewCenter()
+    const copies = els.map((e) => ({ ...translateEl(structuredClone(e), cx - (b.x + b.w / 2), cy - (b.y + b.h / 2)), id: uid() }))
+    commit([...current, ...copies])
+    opts.tool = 'lazo'
+    engine.select(copies.map((c) => c.id))
+  }
+
+  function sendToOther() {
+    if (!selectedEls.length || !onsend) return
+    onsend($state.snapshot(selectedEls) as El[])
+    toast('Copiado al otro lado ✨')
+  }
+
   // ---------- Stickers y notas decoradas ----------
 
   /** Pega algo nuevo en el centro de lo que se ve y lo deja seleccionado para moverlo. */
@@ -479,9 +520,20 @@
   async function insertImages(files: Iterable<File>) {
     if (!engine || !note) return
     const added: ImageEl[] = []
+    let pdfPages = 0
     busy = true
     try {
       for (const file of files) {
+        if (isPdf(file)) {
+          const [cx] = engine.viewCenter()
+          const top = engine.view.y + 40 / engine.view.zoom
+          busyText = 'Abriendo el PDF… ✨'
+          const { pages, skipped } = await pdfToPages(file, cx - PDF_PAGE_W / 2 + added.length * 30, top, (d, t) => (busyText = `Leyendo el PDF… ${d} de ${t}`))
+          added.push(...pages)
+          pdfPages += pages.length
+          if (skipped) toast(`El PDF es muy largo: se agregaron las primeras ${pages.length} páginas.`)
+          continue
+        }
         if (!file.type.startsWith('image/')) continue
         const { blob, bitmap } = await prepareImage(file)
         const blobId = await putBlob(blob)
@@ -495,18 +547,32 @@
         added.push({ type: 'image', id: uid(), x: cx - w / 2 + off, y: cy - h / 2 + off, w, h, rotation: 0, blobId })
       }
     } catch (err) {
-      toast('No se pudo agregar la imagen: ' + (err as Error).message)
+      toast('No se pudo agregar: ' + (err as Error).message)
     } finally {
       busy = false
+      busyText = 'Un momentito… ✨'
     }
     if (!added.length) return
     commit([...current, ...added])
+    if (pdfPages) {
+      engine.fitWidth(added.find((a) => a.locked)!, 1.5)
+      opts.tool = 'pluma'
+      toast(`PDF listo (${pdfPages} ${pdfPages === 1 ? 'página' : 'páginas'}). Escribe encima ✍️ Para mover una página, tócala dos veces con el lazo.`, undefined, 6000)
+      return
+    }
     opts.tool = 'lazo'
     engine.select(added.map((a) => a.id))
   }
 
+  function onDrop(e: DragEvent) {
+    e.preventDefault()
+    dragOver = false
+    const files = [...(e.dataTransfer?.files ?? [])]
+    if (files.length) void insertImages(files)
+  }
+
   function onPaste(e: ClipboardEvent) {
-    if (isTyping(e.target) || route() !== 'nota') return
+    if (!active || isTyping(e.target) || (route() !== 'nota' && route() !== 'dividida')) return
     const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'))
     if (files.length) {
       e.preventDefault()
@@ -529,11 +595,12 @@
   }
 
   function onKey(e: KeyboardEvent) {
+    if (!active) return
     if (editing) {
       if (e.key === 'Escape') finishText()
       return
     }
-    if (isTyping(e.target) || showPaper || showExport || app.settingsOpen || showStickers || decoEditing || stickerChoice) return
+    if (isTyping(e.target) || showPaper || showExport || app.settingsOpen || showStickers || decoEditing || stickerChoice || picking) return
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
     if (mod && k === 'z') {
@@ -620,7 +687,9 @@
   function goBack() {
     if (editing) finishText()
     persistNow()
-    if (note) go({ name: 'cuaderno', id: note.notebookId })
+    // En pantalla dividida, "volver" deja esta nota sola en pantalla completa.
+    if (pane) go({ name: 'nota', id })
+    else if (note) go({ name: 'cuaderno', id: note.notebookId })
     else go({ name: 'estante' })
   }
 
@@ -629,7 +698,9 @@
     if (!selRect || !container) return ''
     const cw = container.clientWidth
     const top = selRect.y - 64 - 40 > 8 ? selRect.y - 64 - 40 : selRect.y + selRect.h + 24
-    const cx = Math.min(Math.max(selRect.x + selRect.w / 2, 170), cw - 170)
+    // Medio ancho aproximado de la barra (hasta 10 botones): que nunca se salga por los lados.
+    const half = Math.min(cw / 2, 225)
+    const cx = Math.min(Math.max(selRect.x + selRect.w / 2, half), cw - half)
     return `left:${cx}px;top:${Math.min(top, container.clientHeight - 190)}px`
   })
 </script>
@@ -643,9 +714,13 @@
     <button class="btn primary" onclick={() => go({ name: 'estante' }, true)}>Ir al estante</button>
   </div>
 {:else}
-  <div class="editor">
+  <div class="editor" class:pane class:inactive={!active} role="presentation" onpointerdowncapture={() => onactivate?.()}>
     <header class="topbar">
-      <button class="icon-btn" onclick={goBack} aria-label="Volver al cuaderno"><Icon name="atras" /></button>
+      {#if pane}
+        <button class="icon-btn" onclick={goBack} aria-label="Ver solo esta nota" title="Ver solo esta nota"><Icon name="ajustar" /></button>
+      {:else}
+        <button class="icon-btn" onclick={goBack} aria-label="Volver al cuaderno"><Icon name="atras" /></button>
+      {/if}
       <input
         class="title"
         readonly={isCover}
@@ -676,11 +751,25 @@
           title="Cambiar papel"><Icon name="papel" /></button
         >
         <button class="icon-btn" onclick={() => (showExport = true)} disabled={busy} aria-label="Exportar" title="Exportar"><Icon name="descargar" /></button>
+        {#if !pane && !isCover}
+          <button class="icon-btn" onclick={() => (picking = true)} aria-label="Pantalla dividida" title="Pantalla dividida"><Icon name="dividir" /></button>
+        {/if}
         <button class="icon-btn" onclick={() => (app.settingsOpen = true)} aria-label="Ajustes" title="Ajustes"><Icon name="ajustes" /></button>
       </div>
     </header>
 
-    <div class="stage" bind:this={container}>
+    <div
+      class="stage"
+      class:drag-over={dragOver}
+      bind:this={container}
+      role="presentation"
+      ondragover={(e) => {
+        e.preventDefault()
+        dragOver = true
+      }}
+      ondragleave={() => (dragOver = false)}
+      ondrop={onDrop}
+    >
       {#if editing}
         {@const el = editing.el}
         <div class="text-format" role="toolbar" aria-label="Formato de texto" tabindex="-1" onpointerdown={(e) => {
@@ -752,6 +841,9 @@
             <button class="icon-btn" onclick={() => (showSelColor = true)} aria-label="Cambiar color" title="Cambiar color"><Icon name="paleta" /></button>
             <button class="icon-btn" onclick={() => duplicateSelection()} aria-label="Duplicar" title="Duplicar"><Icon name="copiar" /></button>
             <button class="icon-btn" onclick={prepareSticker} disabled={busy} aria-label="Guardar como sticker" title="Guardar como sticker"><Icon name="sticker" /></button>
+            {#if onsend}
+              <button class="icon-btn" onclick={sendToOther} aria-label="Copiar al otro lado" title="Copiar al otro lado"><Icon name="dividir" /></button>
+            {/if}
             <button class="icon-btn" onclick={() => reorder(true)} aria-label="Traer al frente" title="Traer al frente"><Icon name="frente" /></button>
             <button class="icon-btn" onclick={() => reorder(false)} aria-label="Mandar atrás" title="Mandar atrás"><Icon name="fondo" /></button>
             <button class="icon-btn danger" onclick={deleteSelection} aria-label="Borrar" title="Borrar"><Icon name="basura" /></button>
@@ -764,7 +856,7 @@
       </div>
 
       {#if busy}
-        <div class="busy" role="status">Un momentito… ✨</div>
+        <div class="busy" role="status">{busyText}</div>
       {:else if converting}
         <div class="busy sparkle" role="status">Leyendo tu letra… ✨</div>
       {/if}
@@ -775,7 +867,7 @@
 <input
   bind:this={fileInput}
   type="file"
-  accept="image/*"
+  accept="image/*,application/pdf,.pdf"
   multiple
   hidden
   onchange={(e) => {
@@ -797,6 +889,18 @@
 
 {#if showExport}
   <ActionSheet title="Exportar" actions={exportActions} onclose={() => (showExport = false)} />
+{/if}
+
+{#if picking}
+  <NotePicker
+    exclude={id}
+    onpick={(other) => {
+      picking = false
+      persistNow()
+      go({ name: 'dividida', a: id, b: other })
+    }}
+    onclose={() => (picking = false)}
+  />
 {/if}
 
 {#if showStickers}
@@ -824,6 +928,30 @@
 {/if}
 
 <style>
+  .editor.pane .zoom {
+    display: none;
+  }
+
+  .editor.inactive .topbar {
+    opacity: 0.7;
+  }
+
+  .stage.drag-over::after {
+    content: 'Suelta aquí tu imagen o PDF ✨';
+    position: absolute;
+    inset: 12px;
+    z-index: 8;
+    display: grid;
+    place-items: center;
+    border: 3px dashed var(--accent);
+    border-radius: 24px;
+    background: color-mix(in srgb, var(--surface) 70%, transparent);
+    font-weight: 800;
+    font-size: 20px;
+    color: var(--accent-strong);
+    pointer-events: none;
+  }
+
   .sticker-choice {
     display: grid;
     grid-template-columns: 1fr 1fr;

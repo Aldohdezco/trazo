@@ -4,7 +4,8 @@ import { drawPaper } from './background'
 import { boxOf, contentBounds, elBounds, eraseStroke, hitTest, lassoSelects, rectsIntersect, rotateEl, rotatePoint, scaleEl, translateEl, unionRects } from './geom'
 import { layoutText, measureWith, mergeHighlights, rangesUnder } from './text'
 import { onImageLoaded } from './images'
-import { drawElements, drawLine, drawStroke, shapePath, strokeOutline } from './render'
+import { drawElement, drawElements, drawLine, drawStroke, shapePath, strokeOutline } from './render'
+import { recognizeShape } from './shapes'
 
 export type Tool = 'mano' | 'lazo' | 'magica' | PenTool | 'borrador' | 'figura' | 'linea' | 'texto'
 
@@ -52,7 +53,17 @@ type Gesture =
   | { kind: 'ignore' }
   | { kind: 'pan'; pointerId: number; last: [number, number] }
   | { kind: 'pinch'; startDist: number; startZoom: number; anchor: [number, number] }
-  | { kind: 'draw'; pointerId: number; points: number[]; tool: PenTool; pressure: boolean; start: number; magic: boolean }
+  | {
+      kind: 'draw'
+      pointerId: number
+      points: number[]
+      tool: PenTool
+      pressure: boolean
+      start: number
+      magic: boolean
+      /** Figura reconocida al dejar el lápiz quieto: reemplaza al trazo. */
+      snapped?: ShapeEl | LineEl | null
+    }
   | { kind: 'erase'; pointerId: number; before: El[]; changed: boolean; last: [number, number] | null }
   | { kind: 'lasso'; pointerId: number; poly: number[] }
   | {
@@ -92,6 +103,8 @@ export class Engine {
   private spaceDown = false
   private lastTap: { id: string; time: number } | null = null
   private raf = 0
+  private holdTimer: ReturnType<typeof setTimeout> | undefined
+  private holdAnchor: [number, number] = [0, 0]
   private dirtyBase = false
   private dirtyOverlay = false
   private cleanup: (() => void)[] = []
@@ -232,6 +245,13 @@ export class Engine {
     this.fitRect(b, maxZoom)
   }
 
+  /** Ajusta al ancho de un rectángulo y muestra su parte de arriba (para páginas de PDF). */
+  fitWidth(b: Rect, maxZoom = 2) {
+    const pad = 24
+    const z = clamp((this.w - pad * 2) / b.w, MIN_ZOOM, maxZoom)
+    this.setView({ x: b.x + b.w / 2 - this.w / 2 / z, y: b.y - pad / z, zoom: z })
+  }
+
   /** Centra y ajusta el zoom para que se vea completo un rectángulo del lienzo. */
   fitRect(b: Rect, maxZoom = 2) {
     const pad = 60
@@ -336,7 +356,9 @@ export class Engine {
     const darkPaper = isDark(this.bg.color)
     this.worldTransform(ctx)
 
-    if (g.kind === 'draw' && g.points.length) {
+    if (g.kind === 'draw' && g.snapped) {
+      drawElement(ctx, g.snapped, { darkPaper })
+    } else if (g.kind === 'draw' && g.points.length) {
       const size = this.opts.sizes[g.tool]
       const path = strokeOutline(g.points, g.tool, size, g.pressure, false)
       const live: StrokeEl = { type: 'stroke', id: '', tool: g.tool, color: this.strokeColor(g.tool), size, points: g.points, pressure: g.pressure }
@@ -524,6 +546,7 @@ export class Engine {
         start: performance.now(),
         magic,
       }
+      this.armHold(sx, sy)
       this.requestRender(false, true)
       return
     }
@@ -632,6 +655,9 @@ export class Engine {
         return
       }
       case 'draw': {
+        // Ya se convirtió en figura: lo que siga moviéndose no cuenta.
+        if (g.snapped) return
+        if (Math.hypot(sx - this.holdAnchor[0], sy - this.holdAnchor[1]) > 6) this.armHold(sx, sy)
         const events = e.getCoalescedEvents?.() ?? [e]
         const minDist = 0.6 / this.view.zoom
         for (const ce of events.length ? events : [e]) {
@@ -710,6 +736,7 @@ export class Engine {
     }
     if (g.kind === 'none' || ('pointerId' in g && g.pointerId !== e.pointerId)) return
     this.gesture = { kind: 'none' }
+    clearTimeout(this.holdTimer)
     if (cancelled) {
       this.revert(g)
       this.requestRender(true, true)
@@ -721,6 +748,10 @@ export class Engine {
         this.updateCursor()
         break
       case 'draw': {
+        if (g.snapped) {
+          this.commit([...this.elements, g.snapped])
+          break
+        }
         const points = g.points.length === 3 ? [...g.points, g.points[0] + 0.1, g.points[1] + 0.1, g.points[2]] : g.points
         const el: StrokeEl = {
           type: 'stroke',
@@ -769,7 +800,25 @@ export class Engine {
     if (g.kind === 'erase' || g.kind === 'transform') this.elements = g.before
   }
 
+  /** Si el lápiz se queda quieto un momento al final de un trazo, intenta enderezarlo como figura. */
+  private armHold(sx: number, sy: number) {
+    clearTimeout(this.holdTimer)
+    this.holdAnchor = [sx, sy]
+    this.holdTimer = setTimeout(() => this.trySnap(), 650)
+  }
+
+  private trySnap() {
+    const g = this.gesture
+    if (g.kind !== 'draw' || g.magic || g.tool === 'marcador' || g.snapped) return
+    const shape = recognizeShape(g.points, { color: this.strokeColor(g.tool), width: Math.max(2, this.opts.sizes[g.tool] * 0.8) })
+    if (!shape) return
+    g.snapped = shape
+    navigator.vibrate?.(12)
+    this.requestRender(false, true)
+  }
+
   private cancelGesture() {
+    clearTimeout(this.holdTimer)
     this.revert(this.gesture)
     this.gesture = { kind: 'none' }
     this.requestRender(true, true)
@@ -884,7 +933,14 @@ export class Engine {
     const tol = 10 / this.view.zoom
     const hit = [...this.elements].reverse().find((el) => !isLocked(el) && hitTest(el, wx, wy, tol))
     if (!hit) {
-      this.lastTap = null
+      // Las páginas de PDF están fijas: se eligen con doble toque.
+      const page = [...this.elements].reverse().find((el) => isLocked(el) && hitTest(el, wx, wy, tol))
+      const now = performance.now()
+      if (page && this.lastTap?.id === page.id && now - this.lastTap.time < 450) {
+        this.lastTap = null
+        return this.select([page.id])
+      }
+      this.lastTap = page ? { id: page.id, time: now } : null
       return this.select([])
     }
     const now = performance.now()

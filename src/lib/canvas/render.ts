@@ -253,6 +253,16 @@ function drawText(ctx: CanvasRenderingContext2D, el: TextEl) {
 function drawImage(ctx: CanvasRenderingContext2D, el: ImageEl) {
   const bmp = getBitmap(el.blobId)
   withBoxTransform(ctx, el, el.rotation, () => {
+    if (el.locked) {
+      // Página de PDF: sombrita de hoja para que se distinga del papel.
+      ctx.save()
+      ctx.shadowColor = 'rgba(90, 40, 60, 0.18)'
+      ctx.shadowBlur = 18
+      ctx.shadowOffsetY = 4
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(-el.w / 2, -el.h / 2, el.w, el.h)
+      ctx.restore()
+    }
     if (bmp) ctx.drawImage(bmp, -el.w / 2, -el.h / 2, el.w, el.h)
     else {
       ctx.fillStyle = 'rgba(232, 137, 166, 0.15)'

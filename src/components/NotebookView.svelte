@@ -8,6 +8,7 @@
     getNotebook,
     listNotes,
     loadContent,
+    saveContent,
     searchNotes,
     restoreNote,
     trashNote,
@@ -15,6 +16,7 @@
     updateNotebook,
   } from '../lib/db'
   import { exportPdf, saveFile } from '../lib/export'
+  import { pdfToPages } from '../lib/pdfImport'
   import type { Background, Note, Notebook } from '../lib/types'
   import { formatDate, storedToBlob } from '../lib/util'
   import ActionSheet, { type Action } from './ActionSheet.svelte'
@@ -37,6 +39,25 @@
   let menuFor = $state<Note | null>(null)
   let editingNotebook = $state(false)
   let busy = $state(false)
+  let pdfInput: HTMLInputElement
+  let importing = $state<string | null>(null)
+
+  /** Crea una nota nueva con las páginas del PDF, listas para escribir encima. */
+  async function importPdf(file: File) {
+    if (!notebook) return
+    importing = 'Abriendo el PDF…'
+    try {
+      const note = await createNote(id, file.name.replace(/\.pdf$/i, ''), { paper: 'liso', color: '#ffffff' })
+      const { pages, skipped } = await pdfToPages(file, 0, 0, (d, t) => (importing = `Leyendo el PDF… ${d} de ${t}`))
+      await saveContent(note.id, pages)
+      if (skipped) toast(`El PDF es muy largo: se agregaron las primeras ${pages.length} páginas.`)
+      go({ name: 'nota', id: note.id })
+    } catch (err) {
+      toast((err as Error).message)
+    } finally {
+      importing = null
+    }
+  }
 
   function revokeThumbs() {
     Object.values(thumbs).forEach((u) => URL.revokeObjectURL(u))
@@ -132,6 +153,7 @@
         <button class="icon-btn" disabled={!notes.length || busy} onclick={() => exportNotes(notes, notebook!.name)} title="Exportar cuaderno a PDF" aria-label="Exportar cuaderno a PDF">
           <Icon name="descargar" />
         </button>
+        <button class="btn" onclick={() => pdfInput.click()} disabled={!!importing} title="Importar un PDF para escribir encima"><Icon name="papel" size={20} /> PDF</button>
         <button class="btn primary" onclick={() => (newNote = { title: '', background: { ...notebook!.background } })}>
           <Icon name="mas" size={20} /> Nueva nota
         </button>
@@ -174,6 +196,22 @@
       <p class="empty small-empty">Ninguna nota tiene eso.</p>
     {/if}
   </div>
+{/if}
+
+<input
+  bind:this={pdfInput}
+  type="file"
+  accept="application/pdf,.pdf"
+  hidden
+  onchange={(e) => {
+    const f = e.currentTarget.files?.[0]
+    e.currentTarget.value = ''
+    if (f) void importPdf(f)
+  }}
+/>
+
+{#if importing}
+  <div class="importing" role="status">{importing} ✨</div>
 {/if}
 
 {#if newNote}
@@ -282,6 +320,20 @@
   .title span {
     font-size: 14px;
     font-weight: 700;
+  }
+
+  .importing {
+    position: fixed;
+    top: calc(16px + var(--safe-top));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    padding: 10px 20px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-weight: 800;
+    box-shadow: var(--shadow-lg);
   }
 
   .tools {
