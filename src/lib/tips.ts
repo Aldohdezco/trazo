@@ -55,6 +55,7 @@ export const TIPS: Record<string, Tip> = {
   'Editar nota': { name: 'Editar nota', desc: 'Cambia el texto, los colores o el adorno de la nota decorada.' },
   'Convertir a texto': { name: 'Convertir a texto ✨', desc: 'Lee tu letra a mano y la vuelve texto bonito.' },
   'Quitar resaltado': { name: 'Quitar resaltado', desc: 'Borra el color de fondo que le pusiste al texto con el marcador.' },
+  'Recortar sujeto': { name: 'Recortar sujeto ✂️', desc: 'Quita el fondo de la foto y deja solo a la persona, mascota u objeto, listo para volverlo sticker. La primera vez descarga el recortador (unos 45 MB).' },
   'Cambiar color': { name: 'Color', desc: 'Pinta de otro color lo que seleccionaste.' },
   Duplicar: { name: 'Duplicar', desc: 'Hace una copia justo al lado.' },
   'Guardar como sticker': { name: 'Hacer sticker', desc: 'Convierte lo seleccionado en un sticker tuyo (con o sin borde blanco) para usarlo cuando quieras.' },

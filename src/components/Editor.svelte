@@ -3,12 +3,12 @@
   import { app, fontOptions, go, toast } from '../lib/app.svelte'
   import { INK_COLORS, fontFamily } from '../lib/catalog'
   import { Engine, type Tool, type ToolOptions } from '../lib/canvas/engine'
-  import { boxOf, contentBounds, translateEl } from '../lib/canvas/geom'
+  import { boxOf, contentBounds, rotatePoint, translateEl } from '../lib/canvas/geom'
   import { prepareImage, rememberBitmap } from '../lib/canvas/images'
   import { LINE_HEIGHT, adjustHighlights, fontString, naturalWidth } from '../lib/canvas/text'
   import { detectStyle, textFromStrokes } from '../lib/handwriting'
   import { recognize, recognitionReady } from '../lib/recognize'
-  import { addSticker, db, getNote, getNotebook, loadContent, putBlob, saveContent, updateNote } from '../lib/db'
+  import { addSticker, db, getBlob, getNote, getNotebook, loadContent, putBlob, saveContent, updateNote } from '../lib/db'
   import { exportPdf, exportPng, makeThumbnail, renderRegion, saveFile } from '../lib/export'
   import { makeSticker } from '../lib/stickerMaker'
   import { PDF_PAGE_W, isPdf, pdfToPages } from '../lib/pdfImport'
@@ -120,6 +120,9 @@
   const selectedEls = $derived(selection.length ? current.filter((e) => selection.includes(e.id)) : [])
   const selStrokes = $derived(selectedEls.filter((e) => e.type === 'stroke') as StrokeEl[])
   const selHighlighted = $derived(selectedEls.some((e) => e.type === 'text' && e.highlights?.length))
+  const singlePhoto = $derived(
+    selectedEls.length === 1 && selectedEls[0].type === 'image' && !selectedEls[0].blobId.startsWith('builtin:') ? (selectedEls[0] as ImageEl) : null,
+  )
   const singleDeco = $derived(selectedEls.length === 1 && selectedEls[0].type === 'deco' ? (selectedEls[0] as DecoEl) : null)
   const singleText = $derived(selectedEls.length === 1 && selectedEls[0].type === 'text' ? (selectedEls[0] as TextEl) : null)
 
@@ -452,6 +455,35 @@
     if (!selectedEls.length || !onsend) return
     onsend($state.snapshot(selectedEls) as El[])
     toast('Copiado al otro lado ✨')
+  }
+
+  // ---------- Recortar sujeto ----------
+
+  /** Quita el fondo de la foto seleccionada y pone el sujeto recortado justo encima. */
+  async function cutOut(photo: ImageEl) {
+    const original = await getBlob(photo.blobId)
+    if (!original) return toast('No encontré la imagen original.')
+    busy = true
+    busyText = 'Preparando el recortador… ✂️'
+    try {
+      const { cutSubject } = await import('../lib/subject')
+      const res = await cutSubject(original, (p) => (busyText = p === null || p >= 100 ? 'Buscando el sujeto… ✂️' : `Descargando el recortador (solo la primera vez)… ${p}%`))
+      busyText = 'Buscando el sujeto… ✂️'
+      const blobId = await putBlob(res.blob)
+      const w = photo.w * res.box.w
+      const h = photo.h * res.box.h
+      // Centro del recorte dentro de la foto (respetando si la foto está girada)
+      const [cx, cy] = rotatePoint(photo.x + photo.w * (res.box.x + res.box.w / 2), photo.y + photo.h * (res.box.y + res.box.h / 2), photo.x + photo.w / 2, photo.y + photo.h / 2, photo.rotation)
+      const cut: ImageEl = { type: 'image', id: uid(), x: cx - w / 2, y: cy - h / 2, w, h, rotation: photo.rotation, blobId }
+      commit([...current, cut])
+      engine?.select([cut.id])
+      toast('¡Listo! El recorte quedó encima de la foto: muévelo o guárdalo como sticker ✨', undefined, 5000)
+    } catch (err) {
+      toast((err as Error).message || 'No se pudo recortar.')
+    } finally {
+      busy = false
+      busyText = 'Un momentito… ✨'
+    }
   }
 
   // ---------- Stickers y notas decoradas ----------
@@ -834,6 +866,9 @@
           {:else}
             {#if singleText}
               <button class="icon-btn" onclick={() => startText(singleText!, false)} aria-label="Editar texto" title="Editar texto"><Icon name="editar" /></button>
+            {/if}
+            {#if singlePhoto}
+              <button class="icon-btn magic" onclick={() => cutOut(singlePhoto!)} disabled={busy} aria-label="Recortar sujeto" title="Recortar sujeto"><Icon name="recortar" /></button>
             {/if}
             {#if singleDeco}
               <button class="icon-btn" onclick={() => (decoEditing = { el: singleDeco!, isNew: false })} aria-label="Editar nota" title="Editar nota"><Icon name="editar" /></button>

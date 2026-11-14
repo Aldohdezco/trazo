@@ -30,6 +30,14 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        runtimeCaching: [
+          {
+            // Motor del recortador de sujetos: grande, se guarda la primera vez que se usa.
+            urlPattern: ({ url }) => url.pathname.endsWith('.wasm') || url.pathname.endsWith('.mjs'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'trazo-motores', expiration: { maxEntries: 10 } },
+          },
+        ],
       },
     }),
   ],

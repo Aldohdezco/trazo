@@ -146,6 +146,12 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
 
 ## 7. Estado
 
+- **Después de las fases** (2026-11-14):
+  - Marcatextos mágico como herramienta propia con 4 modos (fondo, subrayado, marco, contorno de letras); el marcador normal es libre.
+  - Estuche con 9 lápices: pluma, pluma fina, lápiz, crayón, pincel, caligrafía, acuarela, neón y brillitos.
+  - Lápiz mágico con letra fija (p. ej. siempre Cursiva) o automática.
+  - Ayuditas: nombre y explicación de cada botón (mouse/lápiz que flota, o dejar presionado).
+  - Recortar sujeto: quita el fondo de una foto en el dispositivo con el modelo **RMBG-1.4 de BRIA** (licencia de uso **no comercial**; se descarga de Hugging Face la primera vez, ~44 MB, y queda guardado). Si algún día Trazo fuera comercial, hay que cambiar de modelo.
 - **Fase 4:** terminada (2026-11-14). Cambios respecto al plan:
   - PDF: cada página se convierte en una imagen fija (bloqueada) dentro de la nota, para escribir y resaltar encima. Se importa desde el cuaderno (botón «PDF», crea una nota nueva) o desde la nota (botón de imagen, o arrastrando el archivo en la PC). Las páginas no se mueven con el lazo por accidente: se eligen con doble toque. Máximo 80 páginas por PDF.
   - Pantalla dividida: dos notas lado a lado (o una arriba de otra en vertical), con divisor que se arrastra. En lugar de arrastrar elementos de un lado a otro, se seleccionan con el lazo y se usa «Copiar al otro lado».
