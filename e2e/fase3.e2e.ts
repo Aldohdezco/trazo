@@ -40,10 +40,10 @@ test('stickers: pegar uno incluido y guardar uno propio con borde', async ({ pag
   await page.getByRole('button', { name: 'Stickers' }).click()
   await page.getByRole('tab', { name: 'Moños' }).click()
   await page.screenshot({ path: info.outputPath('1-biblioteca.png') })
-  await page.getByRole('button', { name: 'Moño rosa' }).click()
+  await page.getByRole('button', { name: 'Moño rosa', exact: true }).click()
   await page.getByRole('button', { name: 'Stickers' }).click()
   await page.getByRole('tab', { name: 'Washi' }).click()
-  await page.getByRole('button', { name: 'Washi vichy' }).click()
+  await page.getByRole('button', { name: 'Washi vichy', exact: true }).click()
 
   // Dibujo un corazón y lo guardo como sticker
   await page.getByRole('button', { name: 'Lápices' }).click()
@@ -107,7 +107,7 @@ test('portada propia: se dibuja y aparece en el estante', async ({ page }, info)
   const box = (await page.locator('.stage').boundingBox())!
   await page.getByRole('button', { name: 'Stickers' }).click()
   await page.getByRole('tab', { name: 'Flores' }).click()
-  await page.getByRole('button', { name: 'Ramito' }).click()
+  await page.getByRole('button', { name: 'Ramito', exact: true }).click()
   await page.getByRole('button', { name: 'Lápices' }).click()
   await page.getByRole('radio', { name: 'Pincel', exact: true }).click()
   await drag(page, Array.from({ length: 14 }, (_, i) => [box.x + box.width / 2 - 120 + i * 18, box.y + box.height / 2 + 140 + Math.sin(i) * 20] as [number, number]))

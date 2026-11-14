@@ -151,6 +151,8 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
   - Estuche con 9 lápices: pluma, pluma fina, lápiz, crayón, pincel, caligrafía, acuarela, neón y brillitos.
   - Lápiz mágico con letra fija (p. ej. siempre Cursiva) o automática.
   - Ayuditas: nombre y explicación de cada botón (mouse/lápiz que flota, o dejar presionado).
+  - Biblioteca de stickers: al menos 30 en cada sección. Dibujos hechos a mano (moños, corazones, flores, brillitos, washi, marcos) y secciones nuevas con emojis de **Twemoji** con borde blanco troquelado (animalitos, comida y postres, escuela, cielo y clima, caritas, fiesta y fechas). Los SVG de Twemoji se copian a `public/stickers/tw/` con `node scripts/copiar-twemoji.mjs`.
+  - Twemoji: gráficos **CC-BY 4.0** de Twitter/X y colaboradores (https://github.com/jdecked/twemoji); el crédito aparece abajo en la biblioteca de stickers cuando se ve una sección de emojis.
   - Recortar sujeto: quita el fondo de una foto en el dispositivo con el modelo **RMBG-1.4 de BRIA** (licencia de uso **no comercial**; se descarga de Hugging Face la primera vez, ~44 MB, y queda guardado). Si algún día Trazo fuera comercial, hay que cambiar de modelo.
 - **Fase 4:** terminada (2026-11-14). Cambios respecto al plan:
   - PDF: cada página se convierte en una imagen fija (bloqueada) dentro de la nota, para escribir y resaltar encima. Se importa desde el cuaderno (botón «PDF», crea una nota nueva) o desde la nota (botón de imagen, o arrastrando el archivo en la PC). Las páginas no se mueven con el lazo por accidente: se eligen con doble toque. Máximo 80 páginas por PDF.
