@@ -37,8 +37,11 @@ export interface ToolOptions {
 }
 
 export interface EngineCallbacks {
-  /** Cambio que entra al historial (deshacer). */
-  commit(els: El[]): void
+  /**
+   * Cambio que entra al historial (deshacer). `merge`: ajuste seguido del mismo tipo
+   * (p. ej. mover un deslizador); se junta con el anterior en un solo paso.
+   */
+  commit(els: El[], merge?: string): void
   selection(ids: string[]): void
   view(v: View): void
   editText(el: TextEl, isNew: boolean): void
@@ -98,6 +101,8 @@ type Gesture =
       hl: boolean
       color: string
       size: number
+      /** Este toque soltó una selección: si es solo un toquecito, no se dibuja nada. */
+      deselect?: boolean
       /** Figura reconocida al dejar el lápiz quieto: reemplaza al trazo. */
       snapped?: ShapeEl | LineEl | null
     }
@@ -106,7 +111,7 @@ type Gesture =
   | {
       kind: 'transform'
       pointerId: number
-      mode: 'move' | 'scale' | 'rotate'
+      mode: 'move' | 'scale' | 'rotate' | 'width'
       start: [number, number]
       before: El[]
       originals: El[]
@@ -142,6 +147,8 @@ export class Engine {
   private lastTap: { id: string; time: number } | null = null
   /** Último puntito hecho con un lápiz (para reconocer el doble toque). */
   private lastDot: { id: string; time: number; x: number; y: number } | null = null
+  /** Último pase del marcatextos mágico, para poder cambiarle color, grosor o modo. */
+  private lastHl: { marker: StrokeEl; base: El[]; ids: string[]; onText: boolean } | null = null
   private raf = 0
   /** Toque rápido con varios dedos (para deshacer/rehacer). */
   private multiTap: { start: number; fingers: number; starts: Map<number, [number, number]>; moved: number; view: View } | null = null
@@ -489,6 +496,21 @@ export class Engine {
         else ctx.rect(hx - 3.5, hy - 3.5, 7, 7)
         ctx.fill()
       }
+      if (handles.width) {
+        // Pastillita vertical: ancho del texto.
+        const [hx, hy] = handles.width
+        ctx.beginPath()
+        ctx.roundRect(hx - 6, hy - 15, 12, 30, 6)
+        ctx.fillStyle = '#fff'
+        ctx.fill()
+        ctx.lineWidth = 2
+        ctx.strokeStyle = '#d9668a'
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(hx, hy - 7)
+        ctx.lineTo(hx, hy + 7)
+        ctx.stroke()
+      }
       ctx.restore()
     }
 
@@ -507,13 +529,16 @@ export class Engine {
     }
   }
 
-  private handlePositions(): { rotate: [number, number]; scale: [number, number] } | null {
+  private handlePositions(): { rotate: [number, number]; scale: [number, number]; width?: [number, number] } | null {
     const sel = this.selectionScreenRect()
     if (!sel) return null
     const pad = 8
+    const one = this.selected.size === 1 ? this.elements.find((e) => this.selected.has(e.id)) : undefined
     return {
       rotate: [sel.x + sel.w / 2, sel.y - pad - ROTATE_OFFSET],
       scale: [sel.x + sel.w + pad, sel.y + sel.h + pad],
+      // Un texto solo: agarradera a la derecha para hacer el cuadro más ancho o angosto.
+      width: one?.type === 'text' ? [sel.x + sel.w + pad, sel.y + sel.h / 2] : undefined,
     }
   }
 
@@ -591,7 +616,8 @@ export class Engine {
     const tool = this.opts.tool
     const id = e.pointerId
     // Lo que quedó seleccionado se suelta en cuanto se sigue dibujando.
-    if (tool !== 'lazo' && this.selected.size) this.select([])
+    const hadSelection = tool !== 'lazo' && this.selected.size > 0
+    if (hadSelection) this.select([])
 
     if (PEN_TOOLS.includes(tool)) {
       const pressure = e.pointerType === 'pen' && e.pressure > 0 && e.pressure !== 0.5
@@ -609,6 +635,7 @@ export class Engine {
         hl,
         color: hl ? this.opts.highlightColor : this.strokeColor(penTool),
         size: hl ? this.opts.highlighterSize : this.opts.sizes[penTool],
+        deselect: hadSelection,
       }
       this.armHold(sx, sy)
       this.requestRender(false, true)
@@ -623,11 +650,19 @@ export class Engine {
         const h = this.handlePositions()
         const b = this.selectionBounds()
         if (h && b) {
-          const mode = Math.hypot(sx - h.rotate[0], sy - h.rotate[1]) < HANDLE_RADIUS
-            ? 'rotate'
-            : Math.hypot(sx - h.scale[0], sy - h.scale[1]) < HANDLE_RADIUS
-              ? 'scale'
-              : null
+          // La agarradera más cercana al dedo (en un texto chiquito pueden quedar juntas).
+          const near = (
+            [
+              ['rotate', h.rotate],
+              ['scale', h.scale],
+              ['width', h.width],
+            ] as const
+          )
+            .filter((x): x is readonly ['rotate' | 'scale' | 'width', [number, number]] => !!x[1])
+            .map(([m, p]) => [m, Math.hypot(sx - p[0], sy - p[1])] as const)
+            .filter(([, d]) => d < HANDLE_RADIUS)
+            .sort((a, b) => a[1] - b[1])[0]
+          const mode = near ? near[0] : null
           const pad = 8 / this.view.zoom
           const inside = wx >= b.x - pad && wx <= b.x + b.w + pad && wy >= b.y - pad && wy <= b.y + b.h + pad
           if (mode || inside) {
@@ -757,6 +792,15 @@ export class Engine {
           const dx = wx - g.start[0]
           const dy = wy - g.start[1]
           fn = (el) => translateEl(el, dx, dy)
+        } else if (g.mode === 'width') {
+          // Ancho del cuadro de texto: la letra se queda igual, solo cambia dónde se parte el renglón.
+          fn = (el) => {
+            if (el.type !== 'text') return el
+            const dx = wx - g.start[0]
+            const dy = wy - g.start[1]
+            const along = dx * Math.cos(el.rotation) + dy * Math.sin(el.rotation)
+            return { ...el, w: Math.max(el.size * 1.2, el.w + along) }
+          }
         } else if (g.mode === 'scale') {
           // Escala desde la esquina opuesta (arriba a la izquierda).
           const ax = g.box.x
@@ -832,6 +876,7 @@ export class Engine {
           this.commit([...this.elements, g.snapped])
           break
         }
+        if (g.deselect && this.isDot(g)) break
         if (!g.magic && this.handleDot(g)) break
         const points = g.points.length === 3 ? [...g.points, g.points[0] + 0.1, g.points[1] + 0.1, g.points[2]] : g.points
         const el: StrokeEl = {
@@ -854,6 +899,7 @@ export class Engine {
             this.commit(done)
             // Lo nuevo (o los textos que se resaltaron) queda seleccionado para cambiarle color o grosor.
             const ids = onText ? done.filter((e, i) => e !== prev[i]).map((e) => e.id) : done.filter((e) => !before.has(e.id)).map((e) => e.id)
+            this.lastHl = { marker: el, base: prev, ids, onText: !!onText }
             this.autoSelect(ids, 'resaltado', onText ? mode : undefined)
             break
           }
@@ -971,15 +1017,39 @@ export class Engine {
 
   // ---------- Herramientas ----------
 
-  private commit(els: El[]) {
+  private commit(els: El[], merge?: string) {
     this.elements = els
-    this.cb.commit(els)
+    this.cb.commit(els, merge)
   }
 
-  private highlightTexts(stroke: StrokeEl, style: HighlightStyle): El[] | null {
+  /**
+   * Vuelve a hacer el último pase del marcatextos con otro color, grosor o modo
+   * (cuando se cambian en la barra de abajo mientras sigue seleccionado).
+   */
+  restyleHighlight(color: string, size: number, mode: HighlightStyle): boolean {
+    const h = this.lastHl
+    if (!h || h.ids.length !== this.selected.size || !h.ids.every((id) => this.selected.has(id))) return false
+    const ids = new Set(h.ids)
+    const original = new Map(h.base.map((e) => [e.id, e]))
+    // Se quita lo que hizo ese pase: los elementos nuevos, o el resaltado de los textos.
+    const base = h.onText ? this.elements.map((e) => (ids.has(e.id) ? (original.get(e.id) ?? e) : e)) : this.elements.filter((e) => !ids.has(e.id))
+    const marker: StrokeEl = { ...h.marker, color, size }
+    const before = new Set(base.map((e) => e.id))
+    const onText = this.highlightTexts(marker, mode, base)
+    const done = onText ?? applyHighlighter(marker, base, mode, uid)
+    if (!done) return false
+    const newIds = onText ? done.filter((e, i) => e !== base[i]).map((e) => e.id) : done.filter((e) => !before.has(e.id)).map((e) => e.id)
+    this.commit(done, 'resaltado')
+    this.lastHl = { marker, base: h.onText ? h.base : base, ids: newIds, onText: !!onText }
+    this.select(newIds)
+    this.cb.made?.(newIds, 'resaltado', onText ? mode : undefined)
+    return true
+  }
+
+  private highlightTexts(stroke: StrokeEl, style: HighlightStyle, source = this.elements): El[] | null {
     const sb = elBounds(stroke)
     let changed = false
-    const els = this.elements.map((el) => {
+    const els = source.map((el) => {
       if (el.type !== 'text' || !rectsIntersect(elBounds(el), sb)) return el
       const box = boxOf(el)
       const cx = box.x + box.w / 2

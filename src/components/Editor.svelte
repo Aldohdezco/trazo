@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from 'svelte'
+  import { onDestroy, onMount, tick, untrack } from 'svelte'
   import { app, fontOptions, go, toast } from '../lib/app.svelte'
   import { INK_COLORS, MARKER_COLORS, fontFamily } from '../lib/catalog'
   import { Engine, type Tool, type ToolOptions } from '../lib/canvas/engine'
@@ -95,12 +95,16 @@
   let editing = $state<{ el: TextEl; isNew: boolean } | null>(null)
   let textarea = $state<HTMLTextAreaElement | null>(null)
   let textBox = $state({ left: 0, top: 0, width: 0, rotation: 0, zoom: 1 })
+  let textH = $state(40)
   let showPaper = $state(false)
   let paperDraft = $state<Background | null>(null)
   let showExport = $state(false)
   let showSelColor = $state(false)
   /** El marcatextos acaba de resaltar un texto: cambiar color cambia ese resaltado, no la letra. */
   let freshHl = $state<HighlightStyle | null>(null)
+  /** Qué se acaba de hacer y sigue seleccionado: la barra de abajo lo modifica. */
+  let made = $state<'resaltado' | 'figura' | 'linea' | null>(null)
+  let prevStyle = ''
   let fileInput: HTMLInputElement
   let clipboard: El[] = []
   let busy = $state(false)
@@ -222,6 +226,45 @@
     if (engine) engine.soloLapiz = app.settings.soloLapiz
   })
 
+  // Con lo recién hecho seleccionado, cambiar color, grosor o modo en la barra de abajo lo cambia a eso.
+  $effect(() => {
+    const key = JSON.stringify([
+      opts.highlightColor,
+      opts.highlighterSize,
+      opts.highlighterMode,
+      opts.color,
+      opts.shape,
+      opts.shapeFill,
+      opts.shapeStrokeWidth,
+      opts.lineWidth,
+      opts.lineStart,
+      opts.lineEnd,
+      opts.lineDashed,
+    ])
+    const changed = prevStyle !== '' && key !== prevStyle
+    prevStyle = key
+    if (!changed) return
+    untrack(() => restyleMade())
+  })
+
+  function restyleMade() {
+    if (!made || !selection.length || !engine) return
+    if (made === 'resaltado') {
+      engine.restyleHighlight(opts.highlightColor, opts.highlighterSize, opts.highlighterMode)
+      return
+    }
+    const ids = new Set(selection)
+    const next = current.map((el) => {
+      if (!ids.has(el.id)) return el
+      if (made === 'figura' && el.type === 'shape')
+        return { ...el, shape: opts.shape, stroke: opts.color, fill: opts.shapeFill, strokeWidth: opts.shapeStrokeWidth }
+      if (made === 'linea' && el.type === 'line')
+        return { ...el, color: opts.color, width: opts.lineWidth, start: opts.lineStart, end: opts.lineEnd, dashed: opts.lineDashed }
+      return el
+    })
+    commit(next, made)
+  }
+
   $effect(() => {
     if (!engine) return
     engine.features = {
@@ -234,8 +277,14 @@
 
   // ---------- Historial ----------
 
-  function commit(els: El[]) {
-    past = [...past.slice(-99), current]
+  /** Ajustes seguidos del mismo tipo (un deslizador, varios colores) cuentan como un solo paso. */
+  let lastMerge: { key: string; time: number } | null = null
+
+  function commit(els: El[], merge?: string) {
+    const now = Date.now()
+    const joins = !!merge && lastMerge?.key === merge && now - lastMerge.time < 1500 && past.length > 0
+    lastMerge = merge ? { key: merge, time: now } : null
+    if (!joins) past = [...past.slice(-99), current]
     future = []
     current = els
     engine?.setElements(els)
@@ -283,7 +332,7 @@
     current = await loadContent(id)
     await tick()
     engine = new Engine(container, n.background, $state.snapshot(opts) as ToolOptions, {
-      commit: (els) => commit(els),
+      commit: (els, merge) => commit(els, merge),
       pointerDown: () => {
         if (editing) finishText()
         // Sigue escribiendo: la conversión espera a que termine.
@@ -293,6 +342,7 @@
         selection = ids
         showSelColor = false
         freshHl = null
+        made = null
         updateSelRect()
         // Se soltó lo que se eligió con doble toque: de vuelta al lápiz que traía.
         if (!ids.length && toolBeforeTap && opts.tool === 'lazo') {
@@ -300,8 +350,9 @@
           toolBeforeTap = null
         }
       },
-      made: (_ids, _kind, hl) => {
+      made: (_ids, kind, hl) => {
         freshHl = hl ?? null
+        made = kind
       },
       dropDot: () => {
         if (!past.length) return
@@ -392,6 +443,7 @@
     if (!textarea) return
     textarea.style.height = 'auto'
     textarea.style.height = textarea.scrollHeight + 'px'
+    textH = textarea.offsetHeight
   }
 
   function finishText() {
@@ -413,8 +465,41 @@
 
   function patchEditing(changes: Partial<TextEl>) {
     if (!editing) return
-    editing.el = { ...editing.el, ...changes }
+    const old = editing.el
+    // Letra más grande o más chica: el cuadro crece o se achica igual, para que no se parta el renglón.
+    if (changes.size && changes.size !== old.size && changes.w === undefined) changes = { ...changes, w: Math.max(changes.size * 1.2, old.w * (changes.size / old.size)) }
+    editing.el = { ...old, ...changes }
+    positionTextBox()
     tick().then(autoGrow)
+  }
+
+  /** Agarradera a la derecha del texto que se está escribiendo: cambia el ancho del cuadro. */
+  function resizeEditing(e: PointerEvent) {
+    if (!editing || !engine) return
+    e.preventDefault()
+    const handle = e.currentTarget as HTMLElement
+    handle.setPointerCapture(e.pointerId)
+    const startX = e.clientX
+    const startY = e.clientY
+    const startW = editing.el.w
+    const rot = editing.el.rotation
+    const zoom = engine.view.zoom
+    const move = (ev: PointerEvent) => {
+      if (!editing) return
+      const along = ((ev.clientX - startX) * Math.cos(rot) + (ev.clientY - startY) * Math.sin(rot)) / zoom
+      editing.el = { ...editing.el, w: Math.max(editing.el.size * 1.2, startW + along) }
+      positionTextBox()
+      autoGrow()
+    }
+    const up = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+      handle.removeEventListener('pointercancel', up)
+      textarea?.focus()
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('pointercancel', up)
   }
 
   // ---------- Escritura mágica ----------
@@ -968,6 +1053,15 @@
           style="left:{textBox.left}px;top:{textBox.top}px;width:{textBox.width}px;font:{fontString(el, el.size * textBox.zoom)};line-height:{LINE_HEIGHT};color:{el.color};text-align:{el.align};transform:rotate({textBox.rotation}rad)"
           aria-label="Texto"
         ></textarea>
+        <button
+          class="text-format text-width"
+          tabindex="-1"
+          style="left:{textBox.left + textBox.width - 9}px;top:{textBox.top}px;height:{textH}px;transform-origin:{9 - textBox.width / 2}px {textH / 2}px;transform:rotate({textBox.rotation}rad)"
+          onpointerdown={resizeEditing}
+          onmousedown={(e) => e.preventDefault()}
+          aria-label="Ancho del texto"
+          title="Arrastra para hacer el cuadro más ancho o angosto"
+        ><span></span></button>
       {/if}
 
       {#if selRect && selection.length && !editing}
@@ -1107,6 +1201,30 @@
     font-size: 20px;
     color: var(--accent-strong);
     pointer-events: none;
+  }
+
+  .text-width {
+    position: absolute;
+    z-index: 6;
+    width: 18px;
+    min-height: 34px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+
+  .text-width span {
+    width: 10px;
+    height: min(34px, 80%);
+    min-height: 22px;
+    border-radius: 99px;
+    background: var(--surface);
+    border: 2px solid var(--accent);
+    box-shadow: var(--shadow);
   }
 
   .weight {

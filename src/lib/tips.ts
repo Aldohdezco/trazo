@@ -69,6 +69,7 @@ export const TIPS: Record<string, Tip> = {
   // Formato de texto
   Fuente: { name: 'Fuente', desc: 'Elige el tipo de letra, incluidas las que dibujaste en el taller.' },
   'Letra más chica': { name: 'Más chica', desc: 'Hace la letra más pequeña.' },
+  'Ancho del texto': { name: 'Ancho del texto', desc: 'Arrastra esta pastillita para hacer el cuadro de texto más ancho o más angosto. La letra se queda del mismo tamaño.' },
   'Letra más grande': { name: 'Más grande', desc: 'Hace la letra más grande.' },
   Negrita: { name: 'Negrita', desc: 'Letra más gruesa para lo importante.' },
   Cursiva: { name: 'Cursiva', desc: 'Letra inclinada.' },

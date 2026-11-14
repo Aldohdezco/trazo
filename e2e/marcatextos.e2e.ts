@@ -39,6 +39,8 @@ test('marcatextos mágico: fondo, subrayado, marco y contorno sobre letra a mano
 
   await page.getByRole('button', { name: 'Marcatextos mágico' }).click()
   for (const [i, mode] of ['Fondo', 'Subrayar', 'Marco', 'Contorno de letras', 'Contorno sin fondo'].entries()) {
+    // Un toque en el vacío suelta lo anterior (si no, el modo nuevo lo cambiaría)
+    if (i > 0) await page.mouse.click(b.x + b.width - 50, b.y + 80)
     await page.getByRole('radio', { name: mode, exact: true }).click()
     await drag(page, Array.from({ length: 30 }, (_, k) => at(110 + k * 8, rows[i] - 4 + Math.sin(k * 0.6) * 8)))
   }
@@ -65,10 +67,13 @@ test('marcatextos mágico sobre texto: los modos conviven', async ({ page }, inf
   await page.getByRole('button', { name: 'Marcatextos mágico' }).click()
   await page.getByRole('radio', { name: 'Fondo', exact: true }).click()
   await drag(page, [[b.x + 115, b.y + 200], [b.x + 260, b.y + 202]])
+  await page.mouse.click(b.x + b.width - 50, b.y + 500)
   await page.getByRole('radio', { name: 'Subrayar', exact: true }).click()
   await drag(page, [[b.x + 115, b.y + 202], [b.x + 400, b.y + 200]])
+  await page.mouse.click(b.x + b.width - 50, b.y + 500)
   await page.getByRole('radio', { name: 'Contorno de letras', exact: true }).click()
   await drag(page, [[b.x + 300, b.y + 200], [b.x + 440, b.y + 201]])
+  await page.mouse.click(b.x + b.width - 50, b.y + 500)
   await page.getByRole('radio', { name: 'Contorno sin fondo', exact: true }).click()
   await drag(page, [[b.x + 115, b.y + 200], [b.x + 200, b.y + 201]])
   await page.waitForTimeout(500)
