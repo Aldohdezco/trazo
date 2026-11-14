@@ -222,6 +222,8 @@ export interface Settings {
   hojaPdf: 'a4' | 'carta'
   reconocimiento: Recognition
   fuentesEstilo: Record<HandStyle, FontId>
+  /** Globitos con el nombre y la explicación de cada botón. */
+  ayudas: boolean
 }
 
 export interface Rect {

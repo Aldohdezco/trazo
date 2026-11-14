@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hojaPdf: 'carta',
   reconocimiento: { proveedor: 'ninguno', geminiKey: '', myscriptApp: '', myscriptHmac: '', googleKey: '' },
   fuentesEstilo: { cursiva: 'dancing', molde: 'nunito', mayusculas: 'playfair' },
+  ayudas: true,
 }
 
 export async function loadSettings(): Promise<Settings> {

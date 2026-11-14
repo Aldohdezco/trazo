@@ -12,6 +12,7 @@
   import FontEditor from './components/FontEditor.svelte'
   import FontStudio from './components/FontStudio.svelte'
   import SplitView from './components/SplitView.svelte'
+  import Tooltip from './components/Tooltip.svelte'
 
   initApp().then(() => requestPersistence())
 
@@ -63,6 +64,8 @@
 {#if app.settingsOpen}
   <Settings onclose={() => (app.settingsOpen = false)} onbackup={backup} />
 {/if}
+
+<Tooltip />
 
 <div class="toasts" aria-live="polite">
   {#each app.toasts as t (t.id)}

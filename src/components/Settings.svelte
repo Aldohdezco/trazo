@@ -187,6 +187,18 @@
   </section>
 
   <section>
+    <h3>Ayuditas</h3>
+    <label class="toggle">
+      <input type="checkbox" checked={app.settings.ayudas} onchange={(e) => setSetting('ayudas', e.currentTarget.checked)} />
+      <span class="switch" aria-hidden="true"></span>
+      <span>
+        <strong>Mostrar ayuditas</strong>
+        <small class="muted">Al pasar el mouse o el lápiz sobre un botón (o al dejarlo presionado con el dedo) aparece qué es y para qué sirve.</small>
+      </span>
+    </label>
+  </section>
+
+  <section>
     <h3>Apariencia</h3>
     <div class="chip-row">
       {#each THEMES as t (t.id)}
