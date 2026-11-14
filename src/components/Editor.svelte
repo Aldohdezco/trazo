@@ -8,7 +8,7 @@
   import { LINE_HEIGHT, adjustHighlights, fontString, naturalWidth } from '../lib/canvas/text'
   import { detectStyle, textFromStrokes } from '../lib/handwriting'
   import { recognize, recognitionReady } from '../lib/recognize'
-  import { addSticker, db, getBlob, getNote, getNotebook, loadContent, putBlob, saveContent, updateNote } from '../lib/db'
+  import { addSticker, db, getBlob, getNote, getNotebook, loadContent, putBlob, saveContent, titleFromContent, updateNote } from '../lib/db'
   import { exportPdf, exportPng, makeThumbnail, renderRegion, saveFile } from '../lib/export'
   import { makeSticker } from '../lib/stickerMaker'
   import { PDF_PAGE_W, isPdf, pdfToPages } from '../lib/pdfImport'
@@ -128,9 +128,40 @@
 
   // ---------- Guardado ----------
 
+  /** Aviso discreto arriba: "Guardando…" y luego "Guardado ✓". */
+  let saveState = $state<'idle' | 'saving' | 'saved'>('idle')
+  let saveStateTimer: ReturnType<typeof setTimeout> | undefined
+
   const save = debounce(() => {
-    if (note) void saveContent(note.id, current).catch((e) => toast('No se pudo guardar: ' + e.message))
+    if (!note) return
+    saveContent(note.id, current)
+      .then(() => {
+        saveState = 'saved'
+        clearTimeout(saveStateTimer)
+        saveStateTimer = setTimeout(() => (saveState = 'idle'), 1800)
+      })
+      .catch((e) => {
+        saveState = 'idle'
+        toast('No se pudo guardar: ' + e.message)
+      })
   }, 500)
+
+  function queueSave() {
+    saveState = 'saving'
+    save()
+  }
+
+  /** Si la nota sigue "sin título", toma de título lo primero que escribió. */
+  function autoTitle() {
+    if (!note || note.kind === 'portada') return
+    const t = title.trim()
+    if (t && t !== 'Nota sin título') return
+    const guess = titleFromContent(current)
+    if (!guess) return
+    title = guess
+    note.title = guess
+    void updateNote(note.id, { title: guess })
+  }
 
   const saveThumb = debounce(async () => {
     if (!note) return
@@ -188,7 +219,7 @@
     future = []
     current = els
     engine?.setElements(els)
-    save()
+    queueSave()
     saveThumb()
     updateSelRect()
   }
@@ -199,7 +230,7 @@
     current = past[past.length - 1]
     past = past.slice(0, -1)
     engine?.setElements(current)
-    save()
+    queueSave()
     saveThumb()
     updateSelRect()
   }
@@ -210,7 +241,7 @@
     current = future[0]
     future = future.slice(1)
     engine?.setElements(current)
-    save()
+    queueSave()
     saveThumb()
     updateSelRect()
   }
@@ -251,6 +282,16 @@
       },
       editText: (el, isNew) => startText(el, isNew),
       editDeco: (el) => (decoEditing = { el, isNew: false }),
+      undo: () => {
+        if (!past.length) return
+        undo()
+        toast('Deshecho ↩︎', undefined, 900)
+      },
+      redo: () => {
+        if (!future.length) return
+        redo()
+        toast('Rehecho ↪︎', undefined, 900)
+      },
       magicStroke: (el) => {
         magicIds.push(el.id)
         clearTimeout(magicTimer)
@@ -280,7 +321,9 @@
 
   onDestroy(() => {
     clearTimeout(magicTimer)
+    clearTimeout(saveStateTimer)
     if (editing) finishText()
+    autoTitle()
     persistNow()
     engine?.destroy()
   })
@@ -724,6 +767,7 @@
 
   function goBack() {
     if (editing) finishText()
+    autoTitle()
     persistNow()
     // En pantalla dividida, "volver" deja esta nota sola en pantalla completa.
     if (pane) go({ name: 'nota', id })
@@ -768,6 +812,7 @@
         aria-label="Título de la nota"
         maxlength="80"
       />
+      <span class="save-state" class:show={saveState !== 'idle'} role="status">{saveState === 'saving' ? 'Guardando…' : saveState === 'saved' ? 'Guardado ✓' : ''}</span>
       <div class="group">
         <button class="icon-btn" onclick={undo} disabled={!past.length} aria-label="Deshacer" title="Deshacer (Ctrl+Z)"><Icon name="deshacer" /></button>
         <button class="icon-btn" onclick={redo} disabled={!future.length} aria-label="Rehacer" title="Rehacer (Ctrl+Y)"><Icon name="rehacer" /></button>
@@ -991,6 +1036,27 @@
     font-size: 20px;
     color: var(--accent-strong);
     pointer-events: none;
+  }
+
+  .save-state {
+    flex: none;
+    min-width: 92px;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-faint);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .save-state.show {
+    opacity: 1;
+  }
+
+  @media (max-width: 760px) {
+    .save-state {
+      min-width: 0;
+      font-size: 12px;
+    }
   }
 
   .sticker-choice {

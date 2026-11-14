@@ -92,7 +92,8 @@ test('nota decorada: crear, editar y que se busque su texto', async ({ page }, i
   await page.getByRole('button', { name: 'Volver al cuaderno' }).click()
   await page.getByRole('button', { name: 'Volver al estante' }).click()
   await page.getByPlaceholder('Buscar en todas tus notas…').fill('quimica')
-  await expect(page.getByRole('button', { name: /Nota sin título/ })).toBeVisible()
+  // El título se puso solo con lo que dice la nota
+  await expect(page.getByRole('button', { name: /Examen de química/ })).toBeVisible()
 })
 
 test('portada propia: se dibuja y aparece en el estante', async ({ page }, info) => {

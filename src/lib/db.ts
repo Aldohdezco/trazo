@@ -294,6 +294,38 @@ export async function collectGarbage() {
   if (unused.length) await db.blobs.bulkDelete(unused)
 }
 
+// ---------- Atajos ----------
+
+/** Últimas notas editadas (de cuadernos que no están en la papelera). */
+export async function listRecentNotes(limit = 8): Promise<(Note & { notebookName: string })[]> {
+  const books = new Map((await listNotebooks()).map((n) => [n.id, n.name]))
+  return (await db.notes.orderBy('updatedAt').reverse().toArray())
+    .filter((n) => n.deletedAt === null && n.kind !== 'portada' && books.has(n.notebookId))
+    .slice(0, limit)
+    .map((n) => ({ ...n, notebookName: books.get(n.notebookId)! }))
+}
+
+export const QUICK_NOTEBOOK = 'Notas rápidas'
+
+/** Crea una nota al instante en el cuaderno "Notas rápidas" (lo crea si no existe). */
+export async function createQuickNote(): Promise<Note> {
+  let book = (await listNotebooks()).find((n) => n.name === QUICK_NOTEBOOK)
+  book ??= await createNotebook(QUICK_NOTEBOOK, { template: 'corazones', color: '#f8d2bd' }, { paper: 'punteado', color: '#fdf6ec' })
+  const when = new Date().toLocaleDateString('es', { day: 'numeric', month: 'short' })
+  return createNote(book.id, `Nota rápida · ${when}`, book.background)
+}
+
+/** Título a partir de lo escrito: la primera línea del texto que esté más arriba. */
+export function titleFromContent(elements: El[]): string | null {
+  const texts = elements
+    .filter((e) => (e.type === 'text' || e.type === 'deco') && e.text.trim())
+    .sort((a, b) => (a as { y: number }).y - (b as { y: number }).y || (a as { x: number }).x - (b as { x: number }).x)
+  const first = texts[0] as { text: string } | undefined
+  if (!first) return null
+  const line = first.text.trim().split('\n')[0].replace(/\s+/g, ' ')
+  return line.length > 40 ? line.slice(0, 38).trimEnd() + '…' : line
+}
+
 // ---------- Portadas propias ----------
 
 /** Devuelve la nota (oculta) donde se diseña la portada de un cuaderno; la crea si no existe. */

@@ -46,6 +46,9 @@ export interface EngineCallbacks {
   pointerDown?(): void
   /** Doble toque en una nota decorada: abrir su editor. */
   editDeco?(el: DecoEl): void
+  /** Toque con dos dedos: deshacer. Toque con tres: rehacer. */
+  undo?(): void
+  redo?(): void
   /** Trazo hecho con el Lápiz mágico (ya está en el lienzo; se convertirá a texto). */
   magicStroke?(el: StrokeEl): void
 }
@@ -116,6 +119,8 @@ export class Engine {
   private spaceDown = false
   private lastTap: { id: string; time: number } | null = null
   private raf = 0
+  /** Toque rápido con varios dedos (para deshacer/rehacer). */
+  private multiTap: { start: number; fingers: number; starts: Map<number, [number, number]>; moved: number; view: View } | null = null
   private holdTimer: ReturnType<typeof setTimeout> | undefined
   private holdAnchor: [number, number] = [0, 0]
   private dirtyBase = false
@@ -515,6 +520,14 @@ export class Engine {
     if (e.pointerType === 'touch') {
       const touches = this.touchPoints()
       if (touches.length >= 2) {
+        if (!this.multiTap) {
+          const starts = new Map<number, [number, number]>()
+          for (const [pid, p] of this.pointers) if (p.type === 'touch') starts.set(pid, [p.x, p.y])
+          this.multiTap = { start: performance.now(), fingers: touches.length, starts, moved: 0, view: { ...this.view } }
+        } else {
+          this.multiTap.fingers = Math.max(this.multiTap.fingers, touches.length)
+          this.multiTap.starts.set(e.pointerId, [sx, sy])
+        }
         const g = this.gesture
         // Un trazo largo no se cancela por un roce de la palma.
         const busy = g.kind === 'draw' && (performance.now() - g.start > 300 || g.points.length > 30) && this.pointers.get(g.pointerId)?.type !== 'touch'
@@ -647,6 +660,9 @@ export class Engine {
     }
     const g = this.gesture
 
+    const tapStart = this.multiTap?.starts.get(e.pointerId)
+    if (tapStart) this.multiTap!.moved = Math.max(this.multiTap!.moved, Math.hypot(sx - tapStart[0], sy - tapStart[1]))
+
     if (g.kind === 'none' || (g.kind !== 'pinch' && 'pointerId' in g && g.pointerId !== e.pointerId)) {
       if (e.pointerType !== 'touch') {
         this.hover = [sx, sy]
@@ -743,6 +759,19 @@ export class Engine {
   private onUp(e: PointerEvent, cancelled = false) {
     this.pointers.delete(e.pointerId)
     const g = this.gesture
+
+    // Toque rápido con 2 dedos = deshacer; con 3 = rehacer (sin mover ni hacer zoom).
+    if (this.multiTap && !this.touchPoints().length) {
+      const t = this.multiTap
+      this.multiTap = null
+      if (performance.now() - t.start < 320 && t.moved < 14) {
+        this.gesture = { kind: 'none' }
+        this.setView(t.view)
+        if (t.fingers >= 3) this.cb.redo?.()
+        else this.cb.undo?.()
+        return
+      }
+    }
 
     if (g.kind === 'pinch') {
       if (this.touchPoints().length < 2) this.gesture = this.touchPoints().length ? { kind: 'ignore' } : { kind: 'none' }

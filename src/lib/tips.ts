@@ -73,6 +73,7 @@ export const TIPS: Record<string, Tip> = {
   Alinear: { name: 'Alinear', desc: 'Acomoda el texto a la izquierda, al centro o a la derecha.' },
 
   // Estante y cuaderno
+  'Nota rápida': { name: 'Nota rápida ⚡', desc: 'Abre una hoja nueva al instante, sin elegir cuaderno. Se guarda en «Notas rápidas».' },
   'Nuevo cuaderno': { name: 'Nuevo cuaderno', desc: 'Crea un cuaderno con su portada y el papel que quieras.' },
   'Taller de fuentes': { name: 'Taller de fuentes', desc: 'Dibuja tu propia letra, una por una, y úsala en tus notas.' },
   Papelera: { name: 'Papelera', desc: 'Aquí está lo que borraste, por si lo quieres recuperar.' },

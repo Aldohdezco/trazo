@@ -99,6 +99,9 @@
         <small class="muted">Actívalo si tu lápiz es activo (como el Apple Pencil): así el dedo y la palma solo mueven la hoja. Con un lápiz genérico déjalo apagado.</small>
       </span>
     </label>
+    <p class="muted small gestures">
+      👆👆 Toca con <strong>dos dedos</strong> para deshacer · 👆👆👆 con <strong>tres dedos</strong> para rehacer · pellizca con dos dedos para acercar o alejar.
+    </p>
   </section>
 
   <section>

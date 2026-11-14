@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { app, go, toast } from '../lib/app.svelte'
   import {
     createNotebook,
+    createQuickNote,
+    listRecentNotes,
     duplicateNotebook,
     ensureCoverNote,
     listNotebooks,
@@ -12,7 +15,7 @@
     updateNotebook,
   } from '../lib/db'
   import type { Note, Notebook } from '../lib/types'
-  import { formatDate } from '../lib/util'
+  import { formatDate, storedToBlob } from '../lib/util'
   import ActionSheet, { type Action } from './ActionSheet.svelte'
   import Bow from './Bow.svelte'
   import CoverArt from './CoverArt.svelte'
@@ -41,11 +44,25 @@
 
   const nameOf = (id: string) => notebooks.find((n) => n.id === id)?.name ?? ''
 
+  let recents = $state<(Note & { notebookName: string; url: string | null })[]>([])
+
+  function revokeRecents() {
+    recents.forEach((r) => r.url && URL.revokeObjectURL(r.url))
+  }
+  onDestroy(revokeRecents)
+
   async function refresh() {
     notebooks = await listNotebooks()
     loaded = true
+    revokeRecents()
+    recents = (await listRecentNotes(8)).map((n) => ({ ...n, url: n.thumb ? URL.createObjectURL(storedToBlob(n.thumb)) : null }))
   }
   refresh()
+
+  async function quickNote() {
+    const n = await createQuickNote()
+    go({ name: 'nota', id: n.id })
+  }
 
   const needsBackup = $derived.by(() => {
     if (!loaded || !notebooks.length || !app.settings.recordatorioDias) return false
@@ -134,10 +151,31 @@
       {/each}
     </ul>
   {:else}
+  {#if recents.length}
+    <section class="recents" aria-label="Seguir escribiendo">
+      <h2>Seguir escribiendo</h2>
+      <div class="recent-row">
+        {#each recents as r, i (r.id)}
+          <button class="recent" class:first={i === 0} onclick={() => go({ name: 'nota', id: r.id })} aria-label="Abrir {r.title}">
+            <span class="thumb">
+              {#if r.url}<img src={r.url} alt="" />{:else}<Icon name="papel" size={28} />{/if}
+            </span>
+            <span class="r-title">{i === 0 ? '✨ ' : ''}{r.title}</span>
+            <small class="muted">{r.notebookName} · {formatDate(r.updatedAt)}</small>
+          </button>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
   <section class="shelf" aria-label="Cuadernos">
     <button class="new" onclick={() => (creating = true)}>
       <span class="plus"><Icon name="mas" size={30} stroke={2.2} /></span>
       <span>Nuevo cuaderno</span>
+    </button>
+    <button class="new quick" onclick={quickNote} aria-label="Nota rápida">
+      <span class="plus"><Icon name="nota" size={28} stroke={2} /></span>
+      <span>Nota rápida ⚡</span>
     </button>
 
     {#each notebooks as nb (nb.id)}
@@ -305,6 +343,84 @@
     color: var(--text-soft);
     font-family: var(--font-script);
     font-size: 24px;
+  }
+
+  .recents {
+    max-width: 1200px;
+    margin: 0 auto 26px;
+  }
+
+  .recents h2 {
+    font-size: 20px;
+    margin-bottom: 12px;
+  }
+
+  .recent-row {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    padding: 4px 4px 10px;
+    scrollbar-width: thin;
+  }
+
+  .recent {
+    flex: none;
+    width: 132px;
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+    padding: 0;
+    border: none;
+    background: none;
+    text-align: left;
+  }
+
+  .recent .thumb {
+    width: 132px;
+    aspect-ratio: 3 / 4;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    color: var(--accent);
+    transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+  }
+
+  .recent.first .thumb {
+    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow);
+  }
+
+  .recent:hover .thumb {
+    transform: translateY(-3px);
+  }
+
+  .recent img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .r-title {
+    max-width: 100%;
+    font-weight: 800;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .recent small {
+    font-size: 12px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .new.quick {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
   }
 
   .shelf {
