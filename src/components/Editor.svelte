@@ -1,25 +1,31 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
-  import { app, go, toast } from '../lib/app.svelte'
-  import { FONTS, INK_COLORS } from '../lib/catalog'
+  import { app, fontOptions, go, toast } from '../lib/app.svelte'
+  import { INK_COLORS, fontFamily } from '../lib/catalog'
   import { Engine, type Tool, type ToolOptions } from '../lib/canvas/engine'
   import { boxOf, contentBounds, translateEl } from '../lib/canvas/geom'
   import { prepareImage, rememberBitmap } from '../lib/canvas/images'
   import { LINE_HEIGHT, adjustHighlights, fontString, naturalWidth } from '../lib/canvas/text'
   import { detectStyle, textFromStrokes } from '../lib/handwriting'
   import { recognize, recognitionReady } from '../lib/recognize'
-  import { db, getNote, loadContent, putBlob, saveContent, updateNote } from '../lib/db'
-  import { exportPdf, exportPng, makeThumbnail, saveFile } from '../lib/export'
-  import type { Background, El, ImageEl, Note, Rect, StrokeEl, TextEl } from '../lib/types'
+  import { addSticker, db, getNote, getNotebook, loadContent, putBlob, saveContent, updateNote } from '../lib/db'
+  import { exportPdf, exportPng, makeThumbnail, renderRegion, saveFile } from '../lib/export'
+  import { makeSticker } from '../lib/stickerMaker'
+  import type { Background, DecoEl, El, ImageEl, Note, Rect, StrokeEl, TextEl } from '../lib/types'
   import { blobToStored, debounce, softFill, uid } from '../lib/util'
   import ActionSheet, { type Action } from './ActionSheet.svelte'
   import ColorRow from './ColorRow.svelte'
+  import DecoEditor from './DecoEditor.svelte'
   import Icon from './Icon.svelte'
+  import StickerDrawer from './StickerDrawer.svelte'
   import Modal from './Modal.svelte'
   import PaperPicker from './PaperPicker.svelte'
   import Toolbar from './Toolbar.svelte'
 
   let { id }: { id: string } = $props()
+
+  /** Zona de la portada cuando se diseña la portada de un cuaderno. */
+  const COVER_FRAME: Rect = { x: 0, y: 0, w: 600, h: 800 }
 
   const OPTS_KEY = 'trazo:herramientas'
   const DEFAULT_OPTS: ToolOptions = {
@@ -76,6 +82,11 @@
   let clipboard: El[] = []
   let busy = $state(false)
 
+  let showStickers = $state(false)
+  let decoEditing = $state<{ el: DecoEl; isNew: boolean } | null>(null)
+  let stickerChoice = $state<{ plain: { blob: Blob; w: number; h: number; url: string }; cut: { blob: Blob; w: number; h: number; url: string } } | null>(null)
+  const isCover = $derived(note?.kind === 'portada')
+
   let converting = $state(false)
   let magicIds: string[] = []
   let magicTimer: ReturnType<typeof setTimeout> | undefined
@@ -85,6 +96,7 @@
   const selectedEls = $derived(selection.length ? current.filter((e) => selection.includes(e.id)) : [])
   const selStrokes = $derived(selectedEls.filter((e) => e.type === 'stroke') as StrokeEl[])
   const selHighlighted = $derived(selectedEls.some((e) => e.type === 'text' && e.highlights?.length))
+  const singleDeco = $derived(selectedEls.length === 1 && selectedEls[0].type === 'deco' ? (selectedEls[0] as DecoEl) : null)
   const singleText = $derived(selectedEls.length === 1 && selectedEls[0].type === 'text' ? (selectedEls[0] as TextEl) : null)
 
   // ---------- Guardado ----------
@@ -95,6 +107,7 @@
 
   const saveThumb = debounce(async () => {
     if (!note) return
+    if (note.kind === 'portada') return void saveCoverImage()
     try {
       const blob = await makeThumbnail(current, note.background)
       await db.notes.update(note.id, { thumb: blob ? await blobToStored(blob) : null })
@@ -102,6 +115,21 @@
       /* la miniatura es opcional */
     }
   }, 2500)
+
+  /** La portada diseñada se guarda como imagen en el cuaderno. */
+  async function saveCoverImage() {
+    if (!note) return
+    try {
+      const nb = await getNotebook(note.notebookId)
+      if (!nb) return
+      const canvas = renderRegion(current, note.background, COVER_FRAME, 0.75)
+      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/webp', 0.88))
+      if (!blob) return
+      await db.notebooks.update(nb.id, { cover: { ...nb.cover, template: 'propia', noteId: note.id, image: await blobToStored(blob) }, updatedAt: Date.now() })
+    } catch {
+      /* si falla, la portada anterior se queda */
+    }
+  }
 
   const saveView = debounce((v: { x: number; y: number; zoom: number }) => {
     if (note) void db.notes.update(note.id, { view: v })
@@ -195,6 +223,7 @@
         saveView(v)
       },
       editText: (el, isNew) => startText(el, isNew),
+      editDeco: (el) => (decoEditing = { el, isNew: false }),
       magicStroke: (el) => {
         magicIds.push(el.id)
         clearTimeout(magicTimer)
@@ -207,8 +236,10 @@
       },
     })
     engine.soloLapiz = app.settings.soloLapiz
+    if (n.kind === 'portada') engine.frame = COVER_FRAME
     engine.setElements(current)
     if (n.view) engine.setView(n.view, false)
+    else if (n.kind === 'portada') engine.fitRect(COVER_FRAME, 1.5)
     else if (current.length) engine.fitContent(1)
     zoom = engine.view.zoom
   })
@@ -346,6 +377,8 @@
           return { ...el, color: c }
         case 'shape':
           return { ...el, stroke: c, fill: el.fill ? softFill(c) : null }
+        case 'deco':
+          return { ...el, ink: c }
         default:
           return el
       }
@@ -372,6 +405,73 @@
     const sel = current.filter((e) => ids.has(e.id))
     const rest = current.filter((e) => !ids.has(e.id))
     commit(toFront ? [...rest, ...sel] : [...sel, ...rest])
+  }
+
+  // ---------- Stickers y notas decoradas ----------
+
+  /** Pega algo nuevo en el centro de lo que se ve y lo deja seleccionado para moverlo. */
+  function placeAtCenter(el: El) {
+    commit([...current, el])
+    opts.tool = 'lazo'
+    engine?.select([el.id])
+  }
+
+  function insertSticker(s: { blobId: string; ratio: number }) {
+    showStickers = false
+    if (!engine) return
+    const [vw] = engine.viewSize()
+    const w = Math.min(vw * 0.35, s.ratio > 1.8 ? 300 : 200)
+    const h = w / s.ratio
+    const [cx, cy] = engine.viewCenter()
+    placeAtCenter({ type: 'image', id: uid(), x: cx - w / 2, y: cy - h / 2, w, h, rotation: 0, blobId: s.blobId })
+  }
+
+  function newDeco() {
+    if (!engine) return
+    const [cx, cy] = engine.viewCenter()
+    const w = 280
+    const h = 220
+    decoEditing = {
+      isNew: true,
+      el: { type: 'deco', id: uid(), x: cx - w / 2, y: cy - h / 2, w, h, rotation: (Math.random() - 0.5) * 0.06, paper: '#fde3ea', ink: '#5b2c3f', accent: '#e889a6', corner: 'mono', text: '', font: opts.font, size: 24 },
+    }
+  }
+
+  function saveDeco(el: DecoEl) {
+    const { isNew } = decoEditing!
+    decoEditing = null
+    if (isNew) placeAtCenter(el)
+    else commit(current.map((e) => (e.id === el.id ? el : e)))
+  }
+
+  async function prepareSticker() {
+    if (!selectedEls.length) return
+    busy = true
+    try {
+      const els = $state.snapshot(selectedEls) as El[]
+      const [plain, cut] = await Promise.all([makeSticker(els, false), makeSticker(els, true)])
+      stickerChoice = { plain: { ...plain, url: URL.createObjectURL(plain.blob) }, cut: { ...cut, url: URL.createObjectURL(cut.blob) } }
+    } catch (err) {
+      toast('No se pudo hacer el sticker: ' + (err as Error).message)
+    } finally {
+      busy = false
+    }
+  }
+
+  async function saveSticker(kind: 'plain' | 'cut') {
+    if (!stickerChoice) return
+    const s = stickerChoice[kind]
+    closeStickerChoice()
+    await addSticker(s.blob, s.w, s.h)
+    toast('¡Sticker guardado! Lo encuentras en Stickers → Míos ♡')
+  }
+
+  function closeStickerChoice() {
+    if (stickerChoice) {
+      URL.revokeObjectURL(stickerChoice.plain.url)
+      URL.revokeObjectURL(stickerChoice.cut.url)
+    }
+    stickerChoice = null
   }
 
   // ---------- Imágenes ----------
@@ -433,7 +533,7 @@
       if (e.key === 'Escape') finishText()
       return
     }
-    if (isTyping(e.target) || showPaper || showExport || app.settingsOpen) return
+    if (isTyping(e.target) || showPaper || showExport || app.settingsOpen || showStickers || decoEditing || stickerChoice) return
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
     if (mod && k === 'z') {
@@ -548,6 +648,7 @@
       <button class="icon-btn" onclick={goBack} aria-label="Volver al cuaderno"><Icon name="atras" /></button>
       <input
         class="title"
+        readonly={isCover}
         bind:value={title}
         onblur={saveTitle}
         onkeydown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
@@ -588,14 +689,14 @@
           <select
             aria-label="Fuente"
             value={el.font}
-            style="font-family:'{FONTS.find((f) => f.id === el.font)?.family}'"
+            style="font-family:'{fontFamily(el.font)}'"
             onchange={(e) => {
               patchEditing({ font: e.currentTarget.value as TextEl['font'] })
               opts.font = e.currentTarget.value as TextEl['font']
               textarea?.focus()
             }}
           >
-            {#each FONTS as f (f.id)}
+            {#each fontOptions() as f (f.id)}
               <option value={f.id}>{f.name}</option>
             {/each}
           </select>
@@ -639,6 +740,9 @@
             {#if singleText}
               <button class="icon-btn" onclick={() => startText(singleText!, false)} aria-label="Editar texto" title="Editar texto"><Icon name="editar" /></button>
             {/if}
+            {#if singleDeco}
+              <button class="icon-btn" onclick={() => (decoEditing = { el: singleDeco!, isNew: false })} aria-label="Editar nota" title="Editar nota"><Icon name="editar" /></button>
+            {/if}
             {#if selStrokes.length}
               <button class="icon-btn magic" onclick={() => convertStrokes(selStrokes.map((s) => s.id))} disabled={converting} aria-label="Convertir a texto" title="Convertir a texto"><Icon name="magica" /></button>
             {/if}
@@ -647,6 +751,7 @@
             {/if}
             <button class="icon-btn" onclick={() => (showSelColor = true)} aria-label="Cambiar color" title="Cambiar color"><Icon name="paleta" /></button>
             <button class="icon-btn" onclick={() => duplicateSelection()} aria-label="Duplicar" title="Duplicar"><Icon name="copiar" /></button>
+            <button class="icon-btn" onclick={prepareSticker} disabled={busy} aria-label="Guardar como sticker" title="Guardar como sticker"><Icon name="sticker" /></button>
             <button class="icon-btn" onclick={() => reorder(true)} aria-label="Traer al frente" title="Traer al frente"><Icon name="frente" /></button>
             <button class="icon-btn" onclick={() => reorder(false)} aria-label="Mandar atrás" title="Mandar atrás"><Icon name="fondo" /></button>
             <button class="icon-btn danger" onclick={deleteSelection} aria-label="Borrar" title="Borrar"><Icon name="basura" /></button>
@@ -655,7 +760,7 @@
       {/if}
 
       <div class="toolbar-wrap">
-        <Toolbar bind:opts onimage={() => fileInput.click()} />
+        <Toolbar bind:opts onimage={() => fileInput.click()} onstickers={() => (showStickers = true)} ondeco={newDeco} />
       </div>
 
       {#if busy}
@@ -694,7 +799,58 @@
   <ActionSheet title="Exportar" actions={exportActions} onclose={() => (showExport = false)} />
 {/if}
 
+{#if showStickers}
+  <StickerDrawer onpick={insertSticker} onclose={() => (showStickers = false)} />
+{/if}
+
+{#if decoEditing}
+  <DecoEditor el={decoEditing.el} isNew={decoEditing.isNew} onsave={saveDeco} onclose={() => (decoEditing = null)} />
+{/if}
+
+{#if stickerChoice}
+  <Modal title="Guardar como sticker" onclose={closeStickerChoice}>
+    <p class="muted">¿Cómo lo quieres?</p>
+    <div class="sticker-choice">
+      <button onclick={() => saveSticker('cut')}>
+        <img src={stickerChoice.cut.url} alt="" />
+        <span>Con borde blanco</span>
+      </button>
+      <button onclick={() => saveSticker('plain')}>
+        <img src={stickerChoice.plain.url} alt="" />
+        <span>Sin borde</span>
+      </button>
+    </div>
+  </Modal>
+{/if}
+
 <style>
+  .sticker-choice {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .sticker-choice button {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    padding: 16px 10px;
+    border-radius: 20px;
+    border: 2px solid var(--line);
+    background: repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 50% / 18px 18px;
+    font-weight: 800;
+  }
+
+  .sticker-choice button:hover {
+    border-color: var(--accent);
+  }
+
+  .sticker-choice img {
+    width: 100%;
+    max-height: 160px;
+    object-fit: contain;
+  }
+
   .missing {
     height: 100%;
     display: grid;

@@ -55,6 +55,10 @@
         </div>
       </div>
 
+      {#if cover.template === 'propia'}
+        <p class="muted hint">Al guardar se abre una hoja en blanco para que dibujes tu portada como quieras ✏️ (con stickers, letras y todo).</p>
+      {/if}
+
       <div class="field">
         <span>Color de portada</span>
         <div class="chip-row" role="radiogroup" aria-label="Color de portada">

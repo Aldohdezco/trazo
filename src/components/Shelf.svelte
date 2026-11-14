@@ -3,6 +3,7 @@
   import {
     createNotebook,
     duplicateNotebook,
+    ensureCoverNote,
     listNotebooks,
     moveNotebook,
     restoreNotebook,
@@ -54,11 +55,17 @@
     return Date.now() - since > app.settings.recordatorioDias * 86_400_000
   })
 
+  async function designCover(notebookId: string) {
+    const noteId = await ensureCoverNote(notebookId)
+    if (noteId) go({ name: 'nota', id: noteId })
+  }
+
   function actionsFor(nb: Notebook): Action[] {
     const i = notebooks.findIndex((n) => n.id === nb.id)
     return [
       { label: 'Abrir', icon: 'papel', run: () => go({ name: 'cuaderno', id: nb.id }) },
       { label: 'Editar nombre y portada', icon: 'editar', run: () => (editing = nb) },
+      ...(nb.cover.template === 'propia' ? [{ label: 'Dibujar mi portada', icon: 'pincel', run: () => designCover(nb.id) }] : []),
       { label: 'Duplicar', icon: 'copiar', run: async () => (await duplicateNotebook(nb.id), refresh(), toast('Cuaderno duplicado ✨')) },
       { label: 'Mover a la izquierda', icon: 'izquierda', disabled: i <= 0, run: async () => (await moveNotebook(nb.id, -1), refresh()) },
       { label: 'Mover a la derecha', icon: 'derecha', disabled: i >= notebooks.length - 1, run: async () => (await moveNotebook(nb.id, 1), refresh()) },
@@ -86,6 +93,7 @@
       <h1>Trazo</h1>
     </div>
     <div class="actions">
+      <button class="icon-btn" onclick={() => go({ name: 'fuentes' })} aria-label="Taller de fuentes" title="Taller de fuentes"><Icon name="letra" /></button>
       <button class="icon-btn" onclick={() => go({ name: 'papelera' })} aria-label="Papelera" title="Papelera"><Icon name="basura" /></button>
       <button class="icon-btn" onclick={onsettings} aria-label="Ajustes" title="Ajustes"><Icon name="ajustes" /></button>
     </div>
@@ -157,7 +165,8 @@
     onsave={async (d) => {
       creating = false
       const nb = await createNotebook(d.name, d.cover, d.background)
-      go({ name: 'cuaderno', id: nb.id })
+      if (d.cover.template === 'propia') await designCover(nb.id)
+      else go({ name: 'cuaderno', id: nb.id })
     }}
   />
 {/if}
@@ -167,9 +176,11 @@
     notebook={editing}
     onclose={() => (editing = null)}
     onsave={async (d) => {
-      await updateNotebook(editing!.id, d)
+      const before = editing!
+      await updateNotebook(before.id, d)
       editing = null
-      refresh()
+      if (d.cover.template === 'propia' && !d.cover.image) await designCover(before.id)
+      else refresh()
     }}
   />
 {/if}

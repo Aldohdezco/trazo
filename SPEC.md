@@ -146,6 +146,11 @@ Los datos viven solo en el dispositivo (IndexedDB). No hay cuentas ni servidor. 
 
 ## 7. Estado
 
+- **Fase 3:** terminada (2026-11-14). Cambios respecto al plan:
+  - Stickers: 26 incluidos (moños, corazones, flores, brillitos, washi, marcos) y los propios se hacen con el lazo → «Guardar como sticker», con o sin borde blanco troquelado.
+  - Notas decoradas: tarjetitas con color, adorno (moño, cinta, chincheta, corazón, encaje o nada) y texto adentro; se editan con doble toque o con el lápiz de la barra.
+  - Portada propia: se dibuja en una hoja tamaño portada (con stickers, texto, todo) y se guarda como imagen del cuaderno.
+  - Creador de fuentes: cada letra se dibuja en una plantilla con guías; la fuente se usa en notas y en la escritura mágica, y se descarga como **.otf** (en vez de .ttf: funciona igual en iPad, Android, Windows y Mac). Sin variantes por letra por ahora.
 - **Fase 2:** terminada (2026-11-07). Cambios respecto al plan:
   - **No hay reconocimiento local.** Ninguna tecnología del navegador lee bien español sin internet (la API nativa de Chrome solo existe en ChromeOS y solo en inglés). Sin internet o sin llaves, el Lápiz mágico deja los trazos como están y avisa.
   - Proveedores disponibles (se eligen en Ajustes; las llaves se guardan solo en el dispositivo y no van en los respaldos):

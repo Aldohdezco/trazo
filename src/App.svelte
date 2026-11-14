@@ -9,6 +9,8 @@
   import Settings from './components/Settings.svelte'
   import Shelf from './components/Shelf.svelte'
   import Trash from './components/Trash.svelte'
+  import FontEditor from './components/FontEditor.svelte'
+  import FontStudio from './components/FontStudio.svelte'
 
   initApp().then(() => requestPersistence())
 
@@ -42,6 +44,12 @@
     <NotebookView id={app.route.id} />
   {:else if app.route.name === 'papelera'}
     <Trash />
+  {:else if app.route.name === 'fuentes'}
+    <FontStudio />
+  {:else if app.route.name === 'fuente'}
+    {#key app.route.id}
+      <FontEditor id={app.route.id} />
+    {/key}
   {:else}
     <Shelf onsettings={() => (app.settingsOpen = true)} onbackup={backup} />
   {/if}

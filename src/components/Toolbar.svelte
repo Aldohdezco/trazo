@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { app } from '../lib/app.svelte'
-  import { FONTS, INK_COLORS, MARKER_COLORS, PEN_TOOLS, SHAPES } from '../lib/catalog'
+  import { app, fontOptions } from '../lib/app.svelte'
+  import { INK_COLORS, MARKER_COLORS, PEN_TOOLS, SHAPES, fontFamily } from '../lib/catalog'
   import { recognitionReady } from '../lib/recognize'
   import type { Tool, ToolOptions } from '../lib/canvas/engine'
   import type { LineCap, PenTool } from '../lib/types'
@@ -8,7 +8,12 @@
   import ColorRow from './ColorRow.svelte'
   import Icon from './Icon.svelte'
 
-  let { opts = $bindable(), onimage }: { opts: ToolOptions; onimage: () => void } = $props()
+  let {
+    opts = $bindable(),
+    onimage,
+    onstickers,
+    ondeco,
+  }: { opts: ToolOptions; onimage: () => void; onstickers: () => void; ondeco: () => void } = $props()
 
   const TOOLS: { id: Tool; label: string; key: string }[] = [
     { id: 'mano', label: 'Mover lienzo', key: 'H' },
@@ -123,8 +128,8 @@
         <button class="chip" class:on={opts.lineDashed} onclick={() => (opts.lineDashed = !opts.lineDashed)}>Punteada</button>
       </div>
     {:else if opts.tool === 'texto'}
-      <select class="font" bind:value={opts.font} aria-label="Fuente" style="font-family:'{FONTS.find((f) => f.id === opts.font)?.family}'">
-        {#each FONTS as f (f.id)}
+      <select class="font" bind:value={opts.font} aria-label="Fuente" style="font-family:'{fontFamily(opts.font)}'">
+        {#each fontOptions() as f (f.id)}
           <option value={f.id} style="font-family:'{f.family}'">{f.name}</option>
         {/each}
       </select>
@@ -152,7 +157,9 @@
       </button>
     {/each}
     <span class="sep"></span>
-    <button class="icon-btn tool" onclick={onimage} aria-label="Agregar imagen" title="Agregar imagen"><Icon name="imagen" /></button>
+    <button class="icon-btn tool" onclick={ondeco} aria-label="Nota decorada" title="Nota decorada"><Icon name="nota" /></button>
+    <button class="icon-btn tool" onclick={onstickers} aria-label="Stickers" title="Stickers"><Icon name="sticker" /></button>
+    <button class="icon-btn tool" onclick={onimage} aria-label="Agregar imagen o PDF" title="Agregar imagen o PDF"><Icon name="imagen" /></button>
   </div>
 </div>
 

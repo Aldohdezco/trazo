@@ -5,11 +5,14 @@ export interface Background {
   color: string
 }
 
-export type CoverTemplate = 'mono' | 'perlas' | 'corazones' | 'vichy' | 'flores' | 'encaje'
+export type CoverTemplate = 'mono' | 'perlas' | 'corazones' | 'vichy' | 'flores' | 'encaje' | 'propia'
 
 export interface Cover {
   template: CoverTemplate
   color: string
+  /** Portada diseñada por ella: imagen ya dibujada y la nota (oculta) donde se edita. */
+  image?: StoredBlob | null
+  noteId?: string
 }
 
 export interface Notebook {
@@ -48,6 +51,8 @@ export interface Note {
   view: View | null
   /** Texto de la nota (cajas de texto), para buscar. */
   searchText?: string
+  /** 'portada': lienzo oculto donde se diseña la portada de un cuaderno. */
+  kind?: 'portada'
 }
 
 export type PenTool = 'pluma' | 'lapiz' | 'pincel' | 'marcador'
@@ -96,7 +101,7 @@ export interface LineEl {
   dashed: boolean
 }
 
-export type FontId =
+export type BuiltinFontId =
   | 'nunito'
   | 'quicksand'
   | 'playfair'
@@ -105,6 +110,9 @@ export type FontId =
   | 'caveat'
   | 'tinos'
   | 'specialelite'
+
+/** Fuente incluida, o una creada por ella en el taller (`custom:<id>`). */
+export type FontId = BuiltinFontId | `custom:${string}`
 
 export interface Highlight {
   /** Rango de caracteres [start, end) dentro de `text`. */
@@ -139,10 +147,50 @@ export interface ImageEl {
   w: number
   h: number
   rotation: number
+  /** Imagen en Trazo, archivo de un sticker propio o `builtin:<id>` para los stickers incluidos. */
   blobId: string
+  /** Páginas de PDF: no se seleccionan con el lazo por accidente. */
+  locked?: boolean
 }
 
-export type El = StrokeEl | ShapeEl | LineEl | TextEl | ImageEl
+export type DecoCorner = 'mono' | 'cinta' | 'chincheta' | 'corazon' | 'encaje' | 'ninguna'
+
+/** Nota decorada: tarjetita con color, decoración en la esquina y texto adentro. */
+export interface DecoEl {
+  type: 'deco'
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation: number
+  paper: string
+  ink: string
+  accent: string
+  corner: DecoCorner
+  text: string
+  font: FontId
+  size: number
+}
+
+export type El = StrokeEl | ShapeEl | LineEl | TextEl | ImageEl | DecoEl
+
+export interface StickerRecord {
+  id: string
+  blobId: string
+  w: number
+  h: number
+  createdAt: number
+}
+
+/** Fuente hecha a mano: cada letra guarda sus trazos en una cuadrícula de 1000×1000. */
+export interface CustomFont {
+  id: string
+  name: string
+  glyphs: Record<string, number[][]>
+  createdAt: number
+  updatedAt: number
+}
 
 export interface NoteContent {
   noteId: string

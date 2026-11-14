@@ -27,6 +27,7 @@ export const COVER_TEMPLATES: { id: CoverTemplate; name: string }[] = [
   { id: 'vichy', name: 'Vichy' },
   { id: 'flores', name: 'Flores' },
   { id: 'encaje', name: 'Encaje' },
+  { id: 'propia', name: 'La diseño yo ✏️' },
 ]
 
 export const COVER_COLORS: { id: string; name: string }[] = [
@@ -68,6 +69,8 @@ export const FONTS: { id: FontId; name: string; family: string }[] = [
 ]
 
 export function fontFamily(id: FontId): string {
+  // Las fuentes propias se registran como "trazo-<id>" (ver fontgen.ts).
+  if (id.startsWith('custom:')) return 'trazo-' + id.slice(7)
   return FONTS.find((f) => f.id === id)?.family ?? 'Nunito'
 }
 

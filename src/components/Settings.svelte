@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { app, requestPersistence, setSetting, toast } from '../lib/app.svelte'
+  import { app, fontOptions, go, requestPersistence, setSetting, toast } from '../lib/app.svelte'
   import { restoreBackup } from '../lib/backup'
   import { cleanKey, testGeminiKey } from '../lib/recognize'
   import { db } from '../lib/db'
-  import { FONTS } from '../lib/catalog'
+  import { fontFamily } from '../lib/catalog'
   import type { FontId, HandStyle, Recognition, Theme } from '../lib/types'
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
@@ -162,13 +162,27 @@
         <label class="field">
           <span>{st.label}</span>
           <select class="input" value={app.settings.fuentesEstilo[st.id]} onchange={(e) => setStyleFont(st.id, e.currentTarget.value as FontId)}>
-            {#each FONTS as f (f.id)}
+            {#each fontOptions() as f (f.id)}
               <option value={f.id}>{f.name}</option>
             {/each}
           </select>
-          <span class="sample" style="font-family:'{FONTS.find((f) => f.id === app.settings.fuentesEstilo[st.id])?.family}'">{st.sample}</span>
+          <span class="sample" style="font-family:'{fontFamily(app.settings.fuentesEstilo[st.id])}'">{st.sample}</span>
         </label>
       {/each}
+    </div>
+  </section>
+
+  <section>
+    <h3>Mis fuentes ✍️</h3>
+    <p class="muted small">Dibuja tu propia letra, una por una, y úsala en tus notas o para la escritura mágica.</p>
+    <div class="row">
+      <button
+        class="btn"
+        onclick={() => {
+          onclose()
+          go({ name: 'fuentes' })
+        }}><Icon name="letra" size={20} /> Abrir el taller de fuentes</button
+      >
     </div>
   </section>
 

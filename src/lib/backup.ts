@@ -1,37 +1,49 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import type { TrazoDB } from './db'
-import type { BlobRecord, Note, NoteContent, Notebook, Settings } from './types'
+import type { BlobRecord, CustomFont, Note, NoteContent, Notebook, Settings, StickerRecord } from './types'
 
 export const BACKUP_VERSION = 1
 
 const LOCAL_ONLY = new Set(['ultimoRespaldo', 'reconocimiento'])
 
+type StoredRef = { type: string; file: string }
+
 interface BackupData {
   app: 'trazo'
   version: number
   createdAt: number
-  notebooks: Notebook[]
+  notebooks: (Omit<Notebook, 'cover'> & { cover: Omit<Notebook['cover'], 'image'> & { image?: StoredRef | null } })[]
   notes: (Omit<Note, 'thumb'> & { thumb: { type: string; file: string } | null })[]
   contents: NoteContent[]
   blobs: { id: string; type: string; file: string }[]
   settings: Partial<Settings>
+  stickers?: StickerRecord[]
+  fonts?: CustomFont[]
 }
 
 /** Crea el archivo .trazo con todo: cuadernos, notas, imágenes y ajustes. */
 export async function createBackup(db: TrazoDB): Promise<Uint8Array> {
-  const [notebooks, notes, contents, blobs, settingRows] = await Promise.all([
+  const [notebooks, notes, contents, blobs, settingRows, stickers, fonts] = await Promise.all([
     db.notebooks.toArray(),
     db.notes.toArray(),
     db.contents.toArray(),
     db.blobs.toArray(),
     db.settings.toArray(),
+    db.stickers.toArray(),
+    db.fonts.toArray(),
   ])
   const files: Record<string, Uint8Array> = {}
   const data: BackupData = {
     app: 'trazo',
     version: BACKUP_VERSION,
     createdAt: Date.now(),
-    notebooks,
+    notebooks: notebooks.map((nb) => {
+      const img = nb.cover.image
+      if (!img) return nb as BackupData['notebooks'][number]
+      const file = `portadas/${nb.id}`
+      files[file] = new Uint8Array(img.data)
+      return { ...nb, cover: { ...nb.cover, image: { type: img.type, file } } }
+    }),
     notes: notes.map((n) => {
       if (!n.thumb) return { ...n, thumb: null }
       const file = `miniaturas/${n.id}`
@@ -39,6 +51,8 @@ export async function createBackup(db: TrazoDB): Promise<Uint8Array> {
       return { ...n, thumb: { type: n.thumb.type, file } }
     }),
     contents,
+    stickers,
+    fonts,
     blobs: blobs.map((b) => {
       const file = `archivos/${b.id}`
       files[file] = new Uint8Array(b.data)
@@ -81,6 +95,13 @@ export async function restoreBackup(db: TrazoDB, bytes: Uint8Array, mode: 'reemp
   if (data.app !== 'trazo') throw new Error('El archivo no es un respaldo de Trazo.')
   if (data.version > BACKUP_VERSION) throw new Error('Este respaldo es de una versión más nueva de Trazo. Actualiza la app.')
 
+  const notebooks: Notebook[] = data.notebooks.map((nb) => {
+    const { image: ref, ...cover } = nb.cover
+    if (!ref || !files[ref.file]) return { ...nb, cover }
+    return { ...nb, cover: { ...cover, image: { type: ref.type, data: toArrayBuffer(files[ref.file]) } } }
+  })
+  const stickers = data.stickers ?? []
+  const fonts = data.fonts ?? []
   const notes: Note[] = data.notes.map((n) => ({
     ...n,
     thumb: n.thumb && files[n.thumb.file] ? { type: n.thumb.type, data: toArrayBuffer(files[n.thumb.file]) } : null,
@@ -89,10 +110,12 @@ export async function restoreBackup(db: TrazoDB, bytes: Uint8Array, mode: 'reemp
     .filter((b) => files[b.file])
     .map((b) => ({ id: b.id, type: b.type, data: toArrayBuffer(files[b.file]) }))
 
-  await db.transaction('rw', [db.notebooks, db.notes, db.contents, db.blobs, db.settings], async () => {
+  await db.transaction('rw', [db.notebooks, db.notes, db.contents, db.blobs, db.settings, db.stickers, db.fonts], async () => {
     if (mode === 'reemplazar') {
-      await Promise.all([db.notebooks.clear(), db.notes.clear(), db.contents.clear(), db.blobs.clear()])
-      await db.notebooks.bulkPut(data.notebooks)
+      await Promise.all([db.notebooks.clear(), db.notes.clear(), db.contents.clear(), db.blobs.clear(), db.stickers.clear(), db.fonts.clear()])
+      await db.notebooks.bulkPut(notebooks)
+      await db.stickers.bulkPut(stickers)
+      await db.fonts.bulkPut(fonts)
       await db.notes.bulkPut(notes)
       await db.contents.bulkPut(data.contents)
       await db.blobs.bulkPut(blobs)
@@ -100,7 +123,10 @@ export async function restoreBackup(db: TrazoDB, bytes: Uint8Array, mode: 'reemp
       return
     }
     const existingNb = new Map((await db.notebooks.toArray()).map((n) => [n.id, n]))
-    await db.notebooks.bulkPut(data.notebooks.filter((n) => !existingNb.has(n.id) || existingNb.get(n.id)!.updatedAt < n.updatedAt))
+    await db.notebooks.bulkPut(notebooks.filter((n) => !existingNb.has(n.id) || existingNb.get(n.id)!.updatedAt < n.updatedAt))
+    await db.stickers.bulkPut(stickers)
+    const existingFonts = new Map((await db.fonts.toArray()).map((f) => [f.id, f]))
+    await db.fonts.bulkPut(fonts.filter((f) => !existingFonts.has(f.id) || existingFonts.get(f.id)!.updatedAt < f.updatedAt))
     const existingNotes = new Map((await db.notes.toArray()).map((n) => [n.id, n]))
     const newer = notes.filter((n) => !existingNotes.has(n.id) || existingNotes.get(n.id)!.updatedAt < n.updatedAt)
     const newerIds = new Set(newer.map((n) => n.id))

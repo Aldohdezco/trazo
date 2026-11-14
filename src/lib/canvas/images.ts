@@ -1,4 +1,5 @@
 import { getBlob } from '../db'
+import { builtinSticker, rasterizeBuiltin } from '../stickers'
 
 const bitmaps = new Map<string, ImageBitmap>()
 const pending = new Map<string, Promise<ImageBitmap | undefined>>()
@@ -21,8 +22,8 @@ export function loadBitmap(blobId: string): Promise<ImageBitmap | undefined> {
   if (ready) return Promise.resolve(ready)
   let p = pending.get(blobId)
   if (!p) {
-    p = getBlob(blobId)
-      .then((blob) => (blob ? createImageBitmap(blob) : undefined))
+    const builtin = builtinSticker(blobId)
+    p = (builtin ? rasterizeBuiltin(builtin) : getBlob(blobId).then((blob) => (blob ? createImageBitmap(blob) : undefined)))
       .then((bmp) => {
         if (bmp) {
           bitmaps.set(blobId, bmp)

@@ -5,6 +5,19 @@
 
   let { cover, title = '' }: { cover: Cover; title?: string } = $props()
 
+  // Portada diseñada por ella: se muestra su dibujo tal cual.
+  let imageUrl = $state<string | null>(null)
+  $effect(() => {
+    const img = cover.template === 'propia' ? cover.image : null
+    if (!img) {
+      imageUrl = null
+      return
+    }
+    const url = URL.createObjectURL(new Blob([img.data], { type: img.type }))
+    imageUrl = url
+    return () => URL.revokeObjectURL(url)
+  })
+
   const uid = $props.id()
   const dark = $derived(isDark(cover.color) || cover.color === '#a8435f')
   const deep = $derived(dark ? mix(cover.color, '#ffffff', 0.55) : mix(cover.color, '#7a2f4c', 0.42))
@@ -58,6 +71,15 @@
 
   <rect x="0" y="0" width="300" height="400" rx="16" fill={cover.color} />
 
+  {#if cover.template === 'propia'}
+    {#if imageUrl}
+      <clipPath id="{uid}-clip"><rect x="0" y="0" width="300" height="400" rx="16" /></clipPath>
+      <image href={imageUrl} x="0" y="0" width="300" height="400" preserveAspectRatio="xMidYMid slice" clip-path="url(#{uid}-clip)" />
+    {:else}
+      <text x="162" y="150" text-anchor="middle" font-size="64">✏️</text>
+    {/if}
+  {/if}
+
   {#if cover.template === 'corazones'}
     <rect x="0" y="0" width="300" height="400" fill="url(#{uid}-hearts)" />
   {:else if cover.template === 'vichy'}
@@ -95,7 +117,7 @@
   <rect x="16" y="0" width="8" height="400" fill={spine} />
   <line x1="24" y1="0" x2="24" y2="400" stroke="#000" stroke-opacity="0.08" stroke-width="2" />
 
-  {#if title}
+  {#if title && !(cover.template === 'propia' && imageUrl)}
     <g transform="translate(162 262)">
       <rect x="-96" y="-38" width="192" height="76" rx="14" fill={plate} />
       <rect x="-89" y="-31" width="178" height="62" rx="10" fill="none" stroke={deep} stroke-opacity="0.5" stroke-dasharray="4 4" stroke-width="1.5" />

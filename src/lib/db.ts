@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Background, BlobRecord, Cover, El, Note, NoteContent, Notebook, Settings } from './types'
+import type { Background, BlobRecord, Cover, CustomFont, El, Note, NoteContent, Notebook, Settings, StickerRecord } from './types'
 import { uid } from './util'
 
 interface SettingRow {
@@ -13,6 +13,8 @@ export class TrazoDB extends Dexie {
   contents!: Table<NoteContent, string>
   blobs!: Table<BlobRecord, string>
   settings!: Table<SettingRow, string>
+  stickers!: Table<StickerRecord, string>
+  fonts!: Table<CustomFont, string>
 
   constructor(name = 'trazo') {
     super(name)
@@ -22,6 +24,10 @@ export class TrazoDB extends Dexie {
       contents: 'noteId',
       blobs: 'id',
       settings: 'key',
+    })
+    this.version(2).stores({
+      stickers: 'id, createdAt',
+      fonts: 'id',
     })
   }
 }
@@ -127,6 +133,13 @@ export async function duplicateNotebook(id: string): Promise<Notebook | undefine
   const copy = await createNotebook(src.name + ' (copia)', src.cover, src.background)
   const notes = await listNotes(id)
   for (const n of notes) await duplicateNote(n.id, copy.id, n.title)
+  if (src.cover.noteId) {
+    const coverNote = await duplicateNote(src.cover.noteId, copy.id, 'Portada')
+    if (coverNote) {
+      await db.notes.update(coverNote.id, { kind: 'portada' })
+      await db.notebooks.update(copy.id, { cover: { ...copy.cover, noteId: coverNote.id } })
+    }
+  }
   return copy
 }
 
@@ -135,23 +148,25 @@ export async function duplicateNotebook(id: string): Promise<Notebook | undefine
 export async function listNotes(notebookId: string, includeDeleted = false): Promise<Note[]> {
   const all = await db.notes.where('notebookId').equals(notebookId).toArray()
   return all
+    .filter((n) => n.kind !== 'portada')
     .filter((n) => (includeDeleted ? n.deletedAt !== null : n.deletedAt === null))
     .sort((a, b) => a.order - b.order)
 }
 
 export async function listTrashedNotes(): Promise<Note[]> {
   const all = await db.notes.toArray()
-  return all.filter((n) => n.deletedAt !== null)
+  return all.filter((n) => n.deletedAt !== null && n.kind !== 'portada')
 }
 
 export async function getNote(id: string) {
   return db.notes.get(id)
 }
 
-export async function createNote(notebookId: string, title: string, background: Background): Promise<Note> {
+export async function createNote(notebookId: string, title: string, background: Background, kind?: Note['kind']): Promise<Note> {
   const siblings = await db.notes.where('notebookId').equals(notebookId).toArray()
   const now = Date.now()
   const note: Note = {
+    ...(kind ? { kind } : {}),
     id: uid(),
     notebookId,
     title: title.trim() || 'Nota sin título',
@@ -221,7 +236,7 @@ export async function saveContent(noteId: string, elements: El[]) {
 
 /** Todo el texto escrito de una nota, en minúsculas y sin acentos, para buscar. */
 export function textOf(elements: El[]): string {
-  return normalize(elements.map((e) => (e.type === 'text' ? e.text : '')).filter(Boolean).join('\n'))
+  return normalize(elements.map((e) => (e.type === 'text' || e.type === 'deco' ? e.text : '')).filter(Boolean).join('\n'))
 }
 
 export function normalize(s: string): string {
@@ -235,14 +250,22 @@ export async function searchNotes(query: string, notebookId?: string): Promise<N
   const live = new Set((await listNotebooks()).map((n) => n.id))
   const all = notebookId ? await db.notes.where('notebookId').equals(notebookId).toArray() : await db.notes.toArray()
   return all
-    .filter((n) => n.deletedAt === null && live.has(n.notebookId))
+    .filter((n) => n.deletedAt === null && n.kind !== 'portada' && live.has(n.notebookId))
     .filter((n) => normalize(n.title).includes(q) || (n.searchText ?? '').includes(q))
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-/** Quita proxies reactivos de Svelte antes de guardar en IndexedDB (no se pueden clonar). */
-function $plain<T>(v: T): T {
-  return JSON.parse(JSON.stringify(v))
+/**
+ * Quita proxies reactivos de Svelte antes de guardar en IndexedDB (no se pueden clonar).
+ * Copia a mano para no perder datos binarios (imágenes de portada), que JSON destruiría.
+ */
+export function $plain<T>(v: T): T {
+  if (v === null || typeof v !== 'object') return v
+  if (v instanceof ArrayBuffer || ArrayBuffer.isView(v) || v instanceof Blob) return v
+  if (Array.isArray(v)) return v.map((x) => $plain(x)) as T
+  const out: Record<string, unknown> = {}
+  for (const [k, x] of Object.entries(v)) if (x !== undefined) out[k] = $plain(x)
+  return out as T
 }
 
 // ---------- Archivos (imágenes) ----------
@@ -264,9 +287,54 @@ export async function collectGarbage() {
   await db.contents.each((c) => {
     for (const el of c.elements) if (el.type === 'image') used.add(el.blobId)
   })
+  await db.stickers.each((s) => used.add(s.blobId))
   const ids = await db.blobs.toCollection().primaryKeys()
   const unused = ids.filter((id) => !used.has(id))
   if (unused.length) await db.blobs.bulkDelete(unused)
+}
+
+// ---------- Portadas propias ----------
+
+/** Devuelve la nota (oculta) donde se diseña la portada de un cuaderno; la crea si no existe. */
+export async function ensureCoverNote(notebookId: string): Promise<string | undefined> {
+  const nb = await db.notebooks.get(notebookId)
+  if (!nb) return
+  if (nb.cover.noteId && (await db.notes.get(nb.cover.noteId))) return nb.cover.noteId
+  const note = await createNote(notebookId, 'Portada', { paper: 'liso', color: nb.cover.color }, 'portada')
+  await db.notebooks.update(notebookId, { cover: { ...nb.cover, template: 'propia', noteId: note.id } })
+  return note.id
+}
+
+// ---------- Stickers ----------
+
+export async function listStickers(): Promise<StickerRecord[]> {
+  return (await db.stickers.orderBy('createdAt').toArray()).reverse()
+}
+
+export async function addSticker(blob: Blob, w: number, h: number): Promise<StickerRecord> {
+  const blobId = await putBlob(blob)
+  const rec: StickerRecord = { id: uid(), blobId, w, h, createdAt: Date.now() }
+  await db.stickers.add(rec)
+  return rec
+}
+
+export async function deleteSticker(id: string) {
+  await db.stickers.delete(id)
+  await collectGarbage()
+}
+
+// ---------- Fuentes propias ----------
+
+export async function listFonts(): Promise<CustomFont[]> {
+  return (await db.fonts.toArray()).sort((a, b) => a.createdAt - b.createdAt)
+}
+
+export async function saveFont(font: CustomFont) {
+  await db.fonts.put($plain({ ...font, updatedAt: Date.now() }))
+}
+
+export async function deleteFont(id: string) {
+  await db.fonts.delete(id)
 }
 
 export async function hasAnyData(): Promise<boolean> {

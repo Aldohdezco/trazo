@@ -4,6 +4,7 @@
   import {
     createNote,
     duplicateNote,
+    ensureCoverNote,
     getNotebook,
     listNotes,
     loadContent,
@@ -83,6 +84,11 @@
     }
   }
 
+  async function designCover() {
+    const noteId = await ensureCoverNote(id)
+    if (noteId) go({ name: 'nota', id: noteId })
+  }
+
   function actionsFor(note: Note): Action[] {
     return [
       { label: 'Abrir', icon: 'papel', run: () => go({ name: 'nota', id: note.id }) },
@@ -119,6 +125,9 @@
         <h1>{notebook.name}</h1>
         <span class="muted">{notes.length} {notes.length === 1 ? 'nota' : 'notas'}</span>
       </div>
+      {#if notebook.cover.template === 'propia'}
+        <button class="btn" onclick={designCover} title="Dibujar mi portada"><Icon name="pincel" size={20} /> Portada</button>
+      {/if}
       <div class="tools">
         <button class="icon-btn" disabled={!notes.length || busy} onclick={() => exportNotes(notes, notebook!.name)} title="Exportar cuaderno a PDF" aria-label="Exportar cuaderno a PDF">
           <Icon name="descargar" />
@@ -221,7 +230,8 @@
     onsave={async (d) => {
       await updateNotebook(id, d)
       editingNotebook = false
-      refresh()
+      if (d.cover.template === 'propia' && !d.cover.image) await designCover()
+      else refresh()
     }}
   />
 {/if}

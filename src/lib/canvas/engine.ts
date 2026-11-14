@@ -1,4 +1,4 @@
-import type { Background, El, FontId, LineCap, LineEl, PenTool, Rect, ShapeEl, ShapeKind, StrokeEl, TextEl, View } from '../types'
+import type { Background, DecoEl, El, FontId, LineCap, LineEl, PenTool, Rect, ShapeEl, ShapeKind, StrokeEl, TextEl, View } from '../types'
 import { clamp, isDark, uid } from '../util'
 import { drawPaper } from './background'
 import { boxOf, contentBounds, elBounds, eraseStroke, hitTest, lassoSelects, rectsIntersect, rotateEl, rotatePoint, scaleEl, translateEl, unionRects } from './geom'
@@ -34,6 +34,8 @@ export interface EngineCallbacks {
   editText(el: TextEl, isNew: boolean): void
   /** Se llama antes de procesar cualquier toque (p. ej. para cerrar la edición de texto). */
   pointerDown?(): void
+  /** Doble toque en una nota decorada: abrir su editor. */
+  editDeco?(el: DecoEl): void
   /** Trazo hecho con el Lápiz mágico (ya está en el lienzo; se convertirá a texto). */
   magicStroke?(el: StrokeEl): void
 }
@@ -74,6 +76,8 @@ export class Engine {
   soloLapiz = false
   selected = new Set<string>()
   hidden = new Set<string>()
+  /** Zona de la portada: lo de afuera se ve tapado. */
+  frame: Rect | null = null
 
   private base: HTMLCanvasElement
   private overlay: HTMLCanvasElement
@@ -153,7 +157,11 @@ export class Engine {
     if (document.fonts) {
       const fontsDone = () => this.requestRender(true, true)
       document.fonts.addEventListener('loadingdone', fontsDone)
-      this.cleanup.push(() => document.fonts.removeEventListener('loadingdone', fontsDone))
+      window.addEventListener('trazo-fuentes', fontsDone)
+      this.cleanup.push(() => {
+        document.fonts.removeEventListener('loadingdone', fontsDone)
+        window.removeEventListener('trazo-fuentes', fontsDone)
+      })
     }
     this.resize()
     this.updateCursor()
@@ -219,8 +227,13 @@ export class Engine {
 
   /** Muestra todo el contenido. `maxZoom` evita agrandar de más una nota con poquito. */
   fitContent(maxZoom = 2) {
-    const b = contentBounds(this.elements)
+    const b = this.frame ?? contentBounds(this.elements)
     if (!b) return this.setView({ x: -40, y: -40, zoom: 1 })
+    this.fitRect(b, maxZoom)
+  }
+
+  /** Centra y ajusta el zoom para que se vea completo un rectángulo del lienzo. */
+  fitRect(b: Rect, maxZoom = 2) {
     const pad = 60
     const z = clamp(Math.min(this.w / (b.w + pad * 2), this.h / (b.h + pad * 2)), MIN_ZOOM, maxZoom)
     this.setView({ x: b.x + b.w / 2 - this.w / 2 / z, y: b.y + b.h / 2 - this.h / 2 / z, zoom: z })
@@ -298,6 +311,21 @@ export class Engine {
     drawPaper(ctx, this.bg, this.view, this.w, this.h)
     this.worldTransform(ctx)
     drawElements(ctx, this.elements, this.visibleRect(), { darkPaper: isDark(this.bg.color) }, this.hidden)
+    if (this.frame) {
+      const f = this.frame
+      const v = this.visibleRect()
+      ctx.save()
+      ctx.fillStyle = 'rgba(90, 40, 60, 0.35)'
+      ctx.beginPath()
+      ctx.rect(v.x, v.y, v.w, v.h)
+      ctx.rect(f.x + f.w, f.y, -f.w, f.h)
+      ctx.fill('evenodd')
+      ctx.setLineDash([8 / this.view.zoom, 6 / this.view.zoom])
+      ctx.lineWidth = 2 / this.view.zoom
+      ctx.strokeStyle = '#d9668a'
+      ctx.strokeRect(f.x, f.y, f.w, f.h)
+      ctx.restore()
+    }
   }
 
   private renderOverlay() {
@@ -821,7 +849,7 @@ export class Engine {
             changed = true
             next.push(...parts)
           } else next.push(el)
-        } else if (hitTest(el, x, y, r)) changed = true
+        } else if (!isLocked(el) && hitTest(el, x, y, r)) changed = true
         else next.push(el)
       }
       if (changed) {
@@ -848,21 +876,22 @@ export class Engine {
     }
     const small = Math.max(maxX - minX, maxY - minY) * this.view.zoom < 8
     if (small || poly.length < 6) return this.tapSelect(poly[0], poly[1])
-    this.select(this.elements.filter((el) => lassoSelects(el, poly)).map((el) => el.id))
+    this.select(this.elements.filter((el) => !isLocked(el) && lassoSelects(el, poly)).map((el) => el.id))
   }
 
   /** Un toque con el lazo selecciona lo que esté debajo; doble toque en un texto lo edita. */
   private tapSelect(wx: number, wy: number) {
     const tol = 10 / this.view.zoom
-    const hit = [...this.elements].reverse().find((el) => hitTest(el, wx, wy, tol))
+    const hit = [...this.elements].reverse().find((el) => !isLocked(el) && hitTest(el, wx, wy, tol))
     if (!hit) {
       this.lastTap = null
       return this.select([])
     }
     const now = performance.now()
-    if (hit.type === 'text' && this.lastTap?.id === hit.id && now - this.lastTap.time < 450) {
+    if ((hit.type === 'text' || hit.type === 'deco') && this.lastTap?.id === hit.id && now - this.lastTap.time < 450) {
       this.lastTap = null
-      this.cb.editText(hit, false)
+      if (hit.type === 'text') this.cb.editText(hit, false)
+      else this.cb.editDeco?.(hit)
       return
     }
     this.lastTap = { id: hit.id, time: now }
@@ -910,6 +939,10 @@ export class Engine {
       dashed: this.opts.lineDashed,
     }
   }
+}
+
+function isLocked(el: El): boolean {
+  return el.type === 'image' && !!el.locked
 }
 
 function isTyping(e: KeyboardEvent): boolean {

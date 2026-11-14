@@ -1,5 +1,6 @@
 import { getStroke } from 'perfect-freehand'
 import type { El, ImageEl, LineCap, LineEl, PenTool, Rect, ShapeEl, ShapeKind, StrokeEl, TextEl } from '../types'
+import { drawDeco } from './deco'
 import { getBitmap } from './images'
 import { LINE_HEIGHT, fontString, layoutText } from './text'
 import { boxOf, elBounds, rectsIntersect } from './geom'
@@ -274,6 +275,8 @@ export function drawElement(ctx: CanvasRenderingContext2D, el: El, opts: DrawOpt
       return drawText(ctx, el)
     case 'image':
       return drawImage(ctx, el)
+    case 'deco':
+      return drawDeco(ctx, el)
   }
 }
 

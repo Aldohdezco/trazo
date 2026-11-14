@@ -1,17 +1,26 @@
-import { DEFAULT_SETTINGS, db, loadSettings, saveSetting, textOf } from './db'
-import type { Settings } from './types'
+import { FONTS } from './catalog'
+import { invalidateTextCache } from './canvas/text'
+import { DEFAULT_SETTINGS, db, listFonts, loadSettings, saveSetting, textOf } from './db'
+import { customFamily, registerFont, unregisterFont } from './fontgen'
+import type { CustomFont, FontId, Settings } from './types'
 
 export type Route =
   | { name: 'estante' }
   | { name: 'cuaderno'; id: string }
   | { name: 'nota'; id: string }
   | { name: 'papelera' }
+  | { name: 'fuentes' }
+  | { name: 'fuente'; id: string }
+  | { name: 'dividida'; a: string; b: string }
 
 function parseHash(): Route {
-  const [, kind, id] = location.hash.split('/')
+  const [, kind, id, id2] = location.hash.split('/')
   if (kind === 'cuaderno' && id) return { name: 'cuaderno', id }
   if (kind === 'nota' && id) return { name: 'nota', id }
   if (kind === 'papelera') return { name: 'papelera' }
+  if (kind === 'fuentes') return { name: 'fuentes' }
+  if (kind === 'fuente' && id) return { name: 'fuente', id }
+  if (kind === 'dividida' && id && id2) return { name: 'dividida', a: id, b: id2 }
   return { name: 'estante' }
 }
 
@@ -23,6 +32,12 @@ export function routeHash(r: Route): string {
       return `#/nota/${r.id}`
     case 'papelera':
       return '#/papelera'
+    case 'fuentes':
+      return '#/fuentes'
+    case 'fuente':
+      return `#/fuente/${r.id}`
+    case 'dividida':
+      return `#/dividida/${r.a}/${r.b}`
     default:
       return '#/'
   }
@@ -40,7 +55,44 @@ export const app = $state({
   ready: false,
   settingsOpen: false,
   toasts: [] as Toast[],
+  /** Fuentes hechas en el taller, ya registradas en el navegador. */
+  customFonts: [] as { id: FontId; name: string; family: string }[],
 })
+
+/** Todas las fuentes para elegir: las incluidas y las propias. */
+export function fontOptions(): { id: FontId; name: string; family: string }[] {
+  return [...FONTS, ...app.customFonts]
+}
+
+function fontsChanged() {
+  invalidateTextCache()
+  window.dispatchEvent(new Event('trazo-fuentes'))
+}
+
+/** Registra (o vuelve a generar) una fuente propia y la deja lista para usar. */
+export async function refreshCustomFont(font: CustomFont) {
+  try {
+    await registerFont(font)
+  } catch (err) {
+    console.warn('No se pudo registrar la fuente', font.name, err)
+    return
+  }
+  const entry = { id: `custom:${font.id}` as FontId, name: font.name || 'Mi letra', family: customFamily(font.id) }
+  const i = app.customFonts.findIndex((f) => f.id === entry.id)
+  if (i >= 0) app.customFonts[i] = entry
+  else app.customFonts.push(entry)
+  fontsChanged()
+}
+
+export function forgetCustomFont(id: string) {
+  unregisterFont(id)
+  app.customFonts = app.customFonts.filter((f) => f.id !== `custom:${id}`)
+  fontsChanged()
+}
+
+async function loadCustomFonts() {
+  for (const f of await listFonts()) await refreshCustomFont(f)
+}
 
 window.addEventListener('hashchange', () => {
   app.route = parseHash()
@@ -57,6 +109,7 @@ export async function initApp() {
   app.settings = await loadSettings()
   app.ready = true
   void indexOldNotes()
+  void loadCustomFonts()
 }
 
 /** Las notas creadas antes de la búsqueda no tienen su texto indexado: se calcula una vez. */

@@ -1,10 +1,10 @@
-import type { El, ImageEl, LineEl, Rect, ShapeEl, StrokeEl, TextEl } from '../types'
+import type { DecoEl, El, ImageEl, LineEl, Rect, ShapeEl, StrokeEl, TextEl } from '../types'
 import { layoutText } from './text'
 
-export type BoxEl = ShapeEl | TextEl | ImageEl
+export type BoxEl = ShapeEl | TextEl | ImageEl | DecoEl
 
 export function isBoxEl(el: El): el is BoxEl {
-  return el.type === 'shape' || el.type === 'text' || el.type === 'image'
+  return el.type === 'shape' || el.type === 'text' || el.type === 'image' || el.type === 'deco'
 }
 
 /** Caja sin rotar de un elemento de caja. */
@@ -226,6 +226,13 @@ export function scaleEl<T extends El>(el: T, cx: number, cy: number, s: number):
       const w = el.w * s
       const h = el.h * s
       return { ...el, x: ncx - w / 2, y: ncy - h / 2, w, h, strokeWidth: el.strokeWidth * s }
+    }
+    case 'deco': {
+      const ncx = sx(el.x + el.w / 2)
+      const ncy = sy(el.y + el.h / 2)
+      const w = el.w * s
+      const h = el.h * s
+      return { ...el, x: ncx - w / 2, y: ncy - h / 2, w, h, size: el.size * s }
     }
     default: {
       const b = el as ImageEl
