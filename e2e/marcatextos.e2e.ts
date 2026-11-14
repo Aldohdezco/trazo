@@ -105,6 +105,7 @@ test('lápiz mágico con letra fija: todo se convierte en cursiva', async ({ pag
   })
   await page.goto('./')
   await page.getByRole('button', { name: 'Ajustes' }).click()
+  await page.getByRole('tab', { name: /Escritura mágica/ }).click()
   await page.getByRole('button', { name: /Gemini/ }).click()
   await page.getByLabel('Llave de Gemini (API key)').fill('k')
   await page.getByLabel('Llave de Gemini (API key)').blur()

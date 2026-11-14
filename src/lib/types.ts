@@ -235,7 +235,19 @@ export interface Settings {
   fuentesEstilo: Record<HandStyle, FontId>
   /** Globitos con el nombre y la explicación de cada botón. */
   ayudas: boolean
+  /** Color de la app (rosa, lila, durazno…). */
+  paleta: Palette
+  /** Lo que se acaba de hacer (marcatextos, figura, línea) queda seleccionado. */
+  autoSeleccion: boolean
+  /** Doble toque sobre algo lo selecciona. */
+  dobleToque: boolean
+  /** Dejar el lápiz quieto al final convierte el trazo en figura perfecta. */
+  figurasMagicas: boolean
+  /** Toque con dos dedos deshace y con tres rehace. */
+  gestosDedos: boolean
 }
+
+export type Palette = 'rosa' | 'lila' | 'durazno' | 'menta' | 'cielo' | 'fresa' | 'vainilla'
 
 export interface Rect {
   x: number

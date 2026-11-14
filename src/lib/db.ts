@@ -46,6 +46,11 @@ export const DEFAULT_SETTINGS: Settings = {
   reconocimiento: { proveedor: 'ninguno', geminiKey: '', myscriptApp: '', myscriptHmac: '', googleKey: '' },
   fuentesEstilo: { cursiva: 'dancing', molde: 'nunito', mayusculas: 'playfair' },
   ayudas: true,
+  paleta: 'rosa',
+  autoSeleccion: true,
+  dobleToque: true,
+  figurasMagicas: true,
+  gestosDedos: true,
 }
 
 export async function loadSettings(): Promise<Settings> {

@@ -24,6 +24,12 @@
     else document.documentElement.dataset.theme = t
   })
 
+  $effect(() => {
+    const p = app.settings.paleta
+    if (p === 'rosa') delete document.documentElement.dataset.palette
+    else document.documentElement.dataset.palette = p
+  })
+
   async function backup() {
     try {
       const bytes = await createBackup(db)

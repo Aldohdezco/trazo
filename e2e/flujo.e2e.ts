@@ -106,6 +106,7 @@ test('exportar PNG, PDF y respaldo', async ({ page }) => {
   await page.getByRole('button', { name: 'Volver al cuaderno' }).click()
   await page.getByRole('button', { name: 'Volver al estante' }).click()
   await page.getByRole('button', { name: 'Ajustes' }).click()
+  await page.getByRole('tab', { name: /Respaldo/ }).click()
   const dl = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Guardar respaldo' }).click()
   expect((await dl).suggestedFilename()).toMatch(/^trazo-respaldo-.*\.trazo$/)
@@ -123,6 +124,7 @@ test('escritura mágica, marcador sobre texto y búsqueda', async ({ page }, inf
 
   await page.goto('./')
   await page.getByRole('button', { name: 'Ajustes' }).click()
+  await page.getByRole('tab', { name: /Escritura mágica/ }).click()
   await page.getByRole('button', { name: 'MyScript' }).click()
   await page.getByLabel('Application key').fill('app-123')
   await page.getByLabel('Application key').blur()
@@ -205,6 +207,7 @@ test('Gemini: usa el estilo que dice la IA y salta modelos saturados', async ({ 
 
   await page.goto('./')
   await page.getByRole('button', { name: 'Ajustes' }).click()
+  await page.getByRole('tab', { name: /Escritura mágica/ }).click()
   await page.getByRole('button', { name: /Gemini/ }).click()
   await page.getByLabel('Llave de Gemini (API key)').fill('gem-789')
   await page.getByLabel('Llave de Gemini (API key)').blur()

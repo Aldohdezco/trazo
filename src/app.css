@@ -71,6 +71,299 @@
   color-scheme: dark;
 }
 
+
+/* ---------- Paletas de color (la rosa es la de arriba) ---------- */
+:root[data-palette='lila'] {
+  --bg: hsl(270 70% 96.5%);
+  --bg-deco: hsl(270 62% 91.5%);
+  --surface: hsl(270 80% 98.6%);
+  --surface-2: hsl(270 70% 95%);
+  --surface-3: hsl(270 58% 90%);
+  --line: hsl(270 48% 87%);
+  --line-strong: hsl(270 42% 77%);
+  --text: hsl(270 36% 25%);
+  --text-soft: hsl(270 22% 45%);
+  --text-faint: hsl(270 18% 64%);
+  --accent: hsl(270 48% 62%);
+  --accent-strong: hsl(270 48% 53%);
+  --accent-soft: hsl(270 68% 87%);
+  --lila: hsl(270 50% 86%);
+}
+:root[data-palette='durazno'] {
+  --bg: hsl(18 70% 96.5%);
+  --bg-deco: hsl(18 62% 91.5%);
+  --surface: hsl(18 80% 98.6%);
+  --surface-2: hsl(18 70% 95%);
+  --surface-3: hsl(18 58% 90%);
+  --line: hsl(18 48% 87%);
+  --line-strong: hsl(18 42% 77%);
+  --text: hsl(18 36% 25%);
+  --text-soft: hsl(18 22% 45%);
+  --text-faint: hsl(18 18% 64%);
+  --accent: hsl(18 78% 60%);
+  --accent-strong: hsl(18 78% 51%);
+  --accent-soft: hsl(18 68% 87%);
+  --lila: hsl(18 50% 86%);
+}
+:root[data-palette='menta'] {
+  --bg: hsl(158 70% 96.5%);
+  --bg-deco: hsl(158 62% 91.5%);
+  --surface: hsl(158 80% 98.6%);
+  --surface-2: hsl(158 70% 95%);
+  --surface-3: hsl(158 58% 90%);
+  --line: hsl(158 48% 87%);
+  --line-strong: hsl(158 42% 77%);
+  --text: hsl(158 36% 25%);
+  --text-soft: hsl(158 22% 45%);
+  --text-faint: hsl(158 18% 64%);
+  --accent: hsl(158 38% 44%);
+  --accent-strong: hsl(158 38% 35%);
+  --accent-soft: hsl(158 68% 87%);
+  --lila: hsl(158 50% 86%);
+}
+:root[data-palette='cielo'] {
+  --bg: hsl(208 70% 96.5%);
+  --bg-deco: hsl(208 62% 91.5%);
+  --surface: hsl(208 80% 98.6%);
+  --surface-2: hsl(208 70% 95%);
+  --surface-3: hsl(208 58% 90%);
+  --line: hsl(208 48% 87%);
+  --line-strong: hsl(208 42% 77%);
+  --text: hsl(208 36% 25%);
+  --text-soft: hsl(208 22% 45%);
+  --text-faint: hsl(208 18% 64%);
+  --accent: hsl(208 58% 52%);
+  --accent-strong: hsl(208 58% 43%);
+  --accent-soft: hsl(208 68% 87%);
+  --lila: hsl(208 50% 86%);
+}
+:root[data-palette='fresa'] {
+  --bg: hsl(350 70% 96.5%);
+  --bg-deco: hsl(350 62% 91.5%);
+  --surface: hsl(350 80% 98.6%);
+  --surface-2: hsl(350 70% 95%);
+  --surface-3: hsl(350 58% 90%);
+  --line: hsl(350 48% 87%);
+  --line-strong: hsl(350 42% 77%);
+  --text: hsl(350 36% 25%);
+  --text-soft: hsl(350 22% 45%);
+  --text-faint: hsl(350 18% 64%);
+  --accent: hsl(350 72% 56%);
+  --accent-strong: hsl(350 72% 47%);
+  --accent-soft: hsl(350 68% 87%);
+  --lila: hsl(350 50% 86%);
+}
+:root[data-palette='vainilla'] {
+  --bg: hsl(36 70% 96.5%);
+  --bg-deco: hsl(36 62% 91.5%);
+  --surface: hsl(36 80% 98.6%);
+  --surface-2: hsl(36 70% 95%);
+  --surface-3: hsl(36 58% 90%);
+  --line: hsl(36 48% 87%);
+  --line-strong: hsl(36 42% 77%);
+  --text: hsl(36 36% 25%);
+  --text-soft: hsl(36 22% 45%);
+  --text-faint: hsl(36 18% 64%);
+  --accent: hsl(36 62% 48%);
+  --accent-strong: hsl(36 62% 39%);
+  --accent-soft: hsl(36 68% 87%);
+  --lila: hsl(36 50% 86%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='claro'])[data-palette='lila'] {
+    --bg: hsl(270 22% 11.5%);
+    --bg-deco: hsl(270 22% 15%);
+    --surface: hsl(270 20% 16%);
+    --surface-2: hsl(270 20% 19.5%);
+    --surface-3: hsl(270 20% 24%);
+    --line: hsl(270 18% 25%);
+    --line-strong: hsl(270 18% 35%);
+    --text: hsl(270 60% 93%);
+    --text-soft: hsl(270 30% 77%);
+    --text-faint: hsl(270 14% 55%);
+    --accent: hsl(270 63% 74%);
+    --accent-strong: hsl(270 63% 82%);
+    --accent-soft: hsl(270 28% 31%);
+    --accent-text: hsl(270 40% 13%);
+  }
+  :root:not([data-theme='claro'])[data-palette='durazno'] {
+    --bg: hsl(18 22% 11.5%);
+    --bg-deco: hsl(18 22% 15%);
+    --surface: hsl(18 20% 16%);
+    --surface-2: hsl(18 20% 19.5%);
+    --surface-3: hsl(18 20% 24%);
+    --line: hsl(18 18% 25%);
+    --line-strong: hsl(18 18% 35%);
+    --text: hsl(18 60% 93%);
+    --text-soft: hsl(18 30% 77%);
+    --text-faint: hsl(18 14% 55%);
+    --accent: hsl(18 80% 74%);
+    --accent-strong: hsl(18 85% 82%);
+    --accent-soft: hsl(18 28% 31%);
+    --accent-text: hsl(18 40% 13%);
+  }
+  :root:not([data-theme='claro'])[data-palette='menta'] {
+    --bg: hsl(158 22% 11.5%);
+    --bg-deco: hsl(158 22% 15%);
+    --surface: hsl(158 20% 16%);
+    --surface-2: hsl(158 20% 19.5%);
+    --surface-3: hsl(158 20% 24%);
+    --line: hsl(158 18% 25%);
+    --line-strong: hsl(158 18% 35%);
+    --text: hsl(158 60% 93%);
+    --text-soft: hsl(158 30% 77%);
+    --text-faint: hsl(158 14% 55%);
+    --accent: hsl(158 53% 74%);
+    --accent-strong: hsl(158 53% 82%);
+    --accent-soft: hsl(158 28% 31%);
+    --accent-text: hsl(158 40% 13%);
+  }
+  :root:not([data-theme='claro'])[data-palette='cielo'] {
+    --bg: hsl(208 22% 11.5%);
+    --bg-deco: hsl(208 22% 15%);
+    --surface: hsl(208 20% 16%);
+    --surface-2: hsl(208 20% 19.5%);
+    --surface-3: hsl(208 20% 24%);
+    --line: hsl(208 18% 25%);
+    --line-strong: hsl(208 18% 35%);
+    --text: hsl(208 60% 93%);
+    --text-soft: hsl(208 30% 77%);
+    --text-faint: hsl(208 14% 55%);
+    --accent: hsl(208 73% 74%);
+    --accent-strong: hsl(208 73% 82%);
+    --accent-soft: hsl(208 28% 31%);
+    --accent-text: hsl(208 40% 13%);
+  }
+  :root:not([data-theme='claro'])[data-palette='fresa'] {
+    --bg: hsl(350 22% 11.5%);
+    --bg-deco: hsl(350 22% 15%);
+    --surface: hsl(350 20% 16%);
+    --surface-2: hsl(350 20% 19.5%);
+    --surface-3: hsl(350 20% 24%);
+    --line: hsl(350 18% 25%);
+    --line-strong: hsl(350 18% 35%);
+    --text: hsl(350 60% 93%);
+    --text-soft: hsl(350 30% 77%);
+    --text-faint: hsl(350 14% 55%);
+    --accent: hsl(350 80% 74%);
+    --accent-strong: hsl(350 85% 82%);
+    --accent-soft: hsl(350 28% 31%);
+    --accent-text: hsl(350 40% 13%);
+  }
+  :root:not([data-theme='claro'])[data-palette='vainilla'] {
+    --bg: hsl(36 22% 11.5%);
+    --bg-deco: hsl(36 22% 15%);
+    --surface: hsl(36 20% 16%);
+    --surface-2: hsl(36 20% 19.5%);
+    --surface-3: hsl(36 20% 24%);
+    --line: hsl(36 18% 25%);
+    --line-strong: hsl(36 18% 35%);
+    --text: hsl(36 60% 93%);
+    --text-soft: hsl(36 30% 77%);
+    --text-faint: hsl(36 14% 55%);
+    --accent: hsl(36 77% 74%);
+    --accent-strong: hsl(36 77% 82%);
+    --accent-soft: hsl(36 28% 31%);
+    --accent-text: hsl(36 40% 13%);
+  }
+}
+:root[data-theme='oscuro'][data-palette='lila'] {
+  --bg: hsl(270 22% 11.5%);
+  --bg-deco: hsl(270 22% 15%);
+  --surface: hsl(270 20% 16%);
+  --surface-2: hsl(270 20% 19.5%);
+  --surface-3: hsl(270 20% 24%);
+  --line: hsl(270 18% 25%);
+  --line-strong: hsl(270 18% 35%);
+  --text: hsl(270 60% 93%);
+  --text-soft: hsl(270 30% 77%);
+  --text-faint: hsl(270 14% 55%);
+  --accent: hsl(270 63% 74%);
+  --accent-strong: hsl(270 63% 82%);
+  --accent-soft: hsl(270 28% 31%);
+  --accent-text: hsl(270 40% 13%);
+}
+:root[data-theme='oscuro'][data-palette='durazno'] {
+  --bg: hsl(18 22% 11.5%);
+  --bg-deco: hsl(18 22% 15%);
+  --surface: hsl(18 20% 16%);
+  --surface-2: hsl(18 20% 19.5%);
+  --surface-3: hsl(18 20% 24%);
+  --line: hsl(18 18% 25%);
+  --line-strong: hsl(18 18% 35%);
+  --text: hsl(18 60% 93%);
+  --text-soft: hsl(18 30% 77%);
+  --text-faint: hsl(18 14% 55%);
+  --accent: hsl(18 80% 74%);
+  --accent-strong: hsl(18 85% 82%);
+  --accent-soft: hsl(18 28% 31%);
+  --accent-text: hsl(18 40% 13%);
+}
+:root[data-theme='oscuro'][data-palette='menta'] {
+  --bg: hsl(158 22% 11.5%);
+  --bg-deco: hsl(158 22% 15%);
+  --surface: hsl(158 20% 16%);
+  --surface-2: hsl(158 20% 19.5%);
+  --surface-3: hsl(158 20% 24%);
+  --line: hsl(158 18% 25%);
+  --line-strong: hsl(158 18% 35%);
+  --text: hsl(158 60% 93%);
+  --text-soft: hsl(158 30% 77%);
+  --text-faint: hsl(158 14% 55%);
+  --accent: hsl(158 53% 74%);
+  --accent-strong: hsl(158 53% 82%);
+  --accent-soft: hsl(158 28% 31%);
+  --accent-text: hsl(158 40% 13%);
+}
+:root[data-theme='oscuro'][data-palette='cielo'] {
+  --bg: hsl(208 22% 11.5%);
+  --bg-deco: hsl(208 22% 15%);
+  --surface: hsl(208 20% 16%);
+  --surface-2: hsl(208 20% 19.5%);
+  --surface-3: hsl(208 20% 24%);
+  --line: hsl(208 18% 25%);
+  --line-strong: hsl(208 18% 35%);
+  --text: hsl(208 60% 93%);
+  --text-soft: hsl(208 30% 77%);
+  --text-faint: hsl(208 14% 55%);
+  --accent: hsl(208 73% 74%);
+  --accent-strong: hsl(208 73% 82%);
+  --accent-soft: hsl(208 28% 31%);
+  --accent-text: hsl(208 40% 13%);
+}
+:root[data-theme='oscuro'][data-palette='fresa'] {
+  --bg: hsl(350 22% 11.5%);
+  --bg-deco: hsl(350 22% 15%);
+  --surface: hsl(350 20% 16%);
+  --surface-2: hsl(350 20% 19.5%);
+  --surface-3: hsl(350 20% 24%);
+  --line: hsl(350 18% 25%);
+  --line-strong: hsl(350 18% 35%);
+  --text: hsl(350 60% 93%);
+  --text-soft: hsl(350 30% 77%);
+  --text-faint: hsl(350 14% 55%);
+  --accent: hsl(350 80% 74%);
+  --accent-strong: hsl(350 85% 82%);
+  --accent-soft: hsl(350 28% 31%);
+  --accent-text: hsl(350 40% 13%);
+}
+:root[data-theme='oscuro'][data-palette='vainilla'] {
+  --bg: hsl(36 22% 11.5%);
+  --bg-deco: hsl(36 22% 15%);
+  --surface: hsl(36 20% 16%);
+  --surface-2: hsl(36 20% 19.5%);
+  --surface-3: hsl(36 20% 24%);
+  --line: hsl(36 18% 25%);
+  --line-strong: hsl(36 18% 35%);
+  --text: hsl(36 60% 93%);
+  --text-soft: hsl(36 30% 77%);
+  --text-faint: hsl(36 14% 55%);
+  --accent: hsl(36 77% 74%);
+  --accent-strong: hsl(36 77% 82%);
+  --accent-soft: hsl(36 28% 31%);
+  --accent-text: hsl(36 40% 13%);
+}
+
 *,
 *::before,
 *::after {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
   import { app, fontOptions, go, toast } from '../lib/app.svelte'
-  import { INK_COLORS, fontFamily } from '../lib/catalog'
+  import { INK_COLORS, MARKER_COLORS, fontFamily } from '../lib/catalog'
   import { Engine, type Tool, type ToolOptions } from '../lib/canvas/engine'
   import { boxOf, contentBounds, rotatePoint, translateEl } from '../lib/canvas/geom'
   import { prepareImage, rememberBitmap } from '../lib/canvas/images'
@@ -12,7 +12,7 @@
   import { exportPdf, exportPng, makeThumbnail, renderRegion, saveFile } from '../lib/export'
   import { makeSticker } from '../lib/stickerMaker'
   import { PDF_PAGE_W, isPdf, pdfToPages } from '../lib/pdfImport'
-  import type { Background, DecoEl, El, ImageEl, Note, Rect, StrokeEl, TextEl } from '../lib/types'
+  import type { Background, DecoEl, El, HighlightStyle, ImageEl, Note, Rect, StrokeEl, TextEl } from '../lib/types'
   import { blobToStored, debounce, softFill, uid } from '../lib/util'
   import ActionSheet, { type Action } from './ActionSheet.svelte'
   import ColorRow from './ColorRow.svelte'
@@ -99,6 +99,8 @@
   let paperDraft = $state<Background | null>(null)
   let showExport = $state(false)
   let showSelColor = $state(false)
+  /** El marcatextos acaba de resaltar un texto: cambiar color cambia ese resaltado, no la letra. */
+  let freshHl = $state<HighlightStyle | null>(null)
   let fileInput: HTMLInputElement
   let clipboard: El[] = []
   let busy = $state(false)
@@ -118,7 +120,15 @@
   let lastMagic: { id: string; time: number } | null = null
 
   const selectedEls = $derived(selection.length ? current.filter((e) => selection.includes(e.id)) : [])
-  const selStrokes = $derived(selectedEls.filter((e) => e.type === 'stroke') as StrokeEl[])
+  const selStrokes = $derived(selectedEls.filter((e) => e.type === 'stroke' && e.tool !== 'marcador') as StrokeEl[])
+  /** Lo seleccionado tiene grosor que se pueda cambiar (trazos, líneas, figuras). */
+  const selHasWidth = $derived(selectedEls.some((e) => e.type === 'stroke' || e.type === 'line' || e.type === 'shape'))
+  /** Todo lo seleccionado es de marcatextos: se ofrecen colores de marcatextos. */
+  const selIsMarker = $derived(
+    !!freshHl || (selectedEls.length > 0 && selectedEls.every((e) => (e.type === 'stroke' && e.tool === 'marcador') || (e.type === 'text' && freshHl))),
+  )
+  /** Herramienta que había antes de seleccionar con doble toque (se vuelve a ella al soltar). */
+  let toolBeforeTap: ToolOptions['tool'] | null = null
   const selHighlighted = $derived(selectedEls.some((e) => e.type === 'text' && e.highlights?.length))
   const singlePhoto = $derived(
     selectedEls.length === 1 && selectedEls[0].type === 'image' && !selectedEls[0].blobId.startsWith('builtin:') ? (selectedEls[0] as ImageEl) : null,
@@ -212,6 +222,16 @@
     if (engine) engine.soloLapiz = app.settings.soloLapiz
   })
 
+  $effect(() => {
+    if (!engine) return
+    engine.features = {
+      autoSelect: app.settings.autoSeleccion,
+      doubleTap: app.settings.dobleToque,
+      snapShapes: app.settings.figurasMagicas,
+      fingerTaps: app.settings.gestosDedos,
+    }
+  })
+
   // ---------- Historial ----------
 
   function commit(els: El[]) {
@@ -272,7 +292,28 @@
       selection: (ids) => {
         selection = ids
         showSelColor = false
+        freshHl = null
         updateSelRect()
+        // Se soltó lo que se eligió con doble toque: de vuelta al lápiz que traía.
+        if (!ids.length && toolBeforeTap && opts.tool === 'lazo') {
+          opts.tool = toolBeforeTap
+          toolBeforeTap = null
+        }
+      },
+      made: (_ids, _kind, hl) => {
+        freshHl = hl ?? null
+      },
+      dropDot: () => {
+        if (!past.length) return
+        current = past[past.length - 1]
+        past = past.slice(0, -1)
+        engine?.setElements(current)
+        queueSave()
+      },
+      doubleTap: (hitId) => {
+        if (opts.tool !== 'lazo') toolBeforeTap = opts.tool
+        opts.tool = 'lazo'
+        engine?.select([hitId])
       },
       view: (v) => {
         zoom = v.zoom
@@ -442,7 +483,10 @@
   }
 
   function recolor(c: string) {
+    const hl = freshHl
     patchSelection((el) => {
+      // Recién resaltado: cambia el color del resaltado, no el de la letra.
+      if (hl && el.type === 'text') return { ...el, highlights: (el.highlights ?? []).map((h) => ((h.style ?? 'fondo') === hl ? { ...h, color: c } : h)) }
       switch (el.type) {
         case 'stroke':
           return { ...el, color: c }
@@ -453,6 +497,29 @@
           return { ...el, stroke: c, fill: el.fill ? softFill(c) : null }
         case 'deco':
           return { ...el, ink: c }
+        default:
+          return el
+      }
+    })
+  }
+
+  /** Más grueso o más delgado: trazos, líneas, figuras y bordes del marcatextos. */
+  function thicken(f: number) {
+    const r = (v: number) => Math.round(v * 100) / 100
+    patchSelection((el) => {
+      switch (el.type) {
+        case 'stroke': {
+          if (el.ring) {
+            // Borde hueco: cambia solo el grosor de la orilla, el hueco se queda igual.
+            const ring = r(Math.min(30, Math.max(1, el.ring * f)))
+            return { ...el, ring, size: r(el.size - el.ring * 2 + ring * 2) }
+          }
+          return { ...el, size: r(Math.min(200, Math.max(0.5, el.size * f))) }
+        }
+        case 'line':
+          return { ...el, width: r(Math.min(60, Math.max(0.5, el.width * f))) }
+        case 'shape':
+          return { ...el, strokeWidth: r(Math.min(60, Math.max(0.5, el.strokeWidth * f))) }
         default:
           return el
       }
@@ -906,7 +973,7 @@
       {#if selRect && selection.length && !editing}
         <div class="sel-bar" style={selBarStyle} role="toolbar" aria-label="Acciones de la selección">
           {#if showSelColor}
-            <ColorRow value="" colors={INK_COLORS} onpick={(c) => recolor(c)} />
+            <ColorRow value="" colors={selIsMarker ? [...MARKER_COLORS, '#f29bb5', '#b88ee0', '#7aa7e0', '#6cc4a4', '#f2b25c', '#e46a5e'] : INK_COLORS} onpick={(c) => recolor(c)} />
             <button class="icon-btn" onclick={() => (showSelColor = false)} aria-label="Cerrar colores"><Icon name="check" /></button>
           {:else}
             {#if singleText}
@@ -925,6 +992,10 @@
               <button class="icon-btn" onclick={clearHighlights} aria-label="Quitar resaltado" title="Quitar resaltado"><Icon name="sinresaltado" /></button>
             {/if}
             <button class="icon-btn" onclick={() => (showSelColor = true)} aria-label="Cambiar color" title="Cambiar color"><Icon name="paleta" /></button>
+            {#if selHasWidth}
+              <button class="icon-btn" onclick={() => thicken(1 / 1.3)} aria-label="Más delgado" title="Más delgado"><span class="weight thin" aria-hidden="true"></span></button>
+              <button class="icon-btn" onclick={() => thicken(1.3)} aria-label="Más grueso" title="Más grueso"><span class="weight thick" aria-hidden="true"></span></button>
+            {/if}
             <button class="icon-btn" onclick={() => duplicateSelection()} aria-label="Duplicar" title="Duplicar"><Icon name="copiar" /></button>
             <button class="icon-btn" onclick={prepareSticker} disabled={busy} aria-label="Guardar como sticker" title="Guardar como sticker"><Icon name="sticker" /></button>
             {#if onsend}
@@ -1036,6 +1107,21 @@
     font-size: 20px;
     color: var(--accent-strong);
     pointer-events: none;
+  }
+
+  .weight {
+    display: block;
+    width: 18px;
+    border-radius: 99px;
+    background: currentColor;
+  }
+
+  .weight.thin {
+    height: 2px;
+  }
+
+  .weight.thick {
+    height: 7px;
   }
 
   .save-state {

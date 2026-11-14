@@ -51,6 +51,27 @@ export interface EngineCallbacks {
   redo?(): void
   /** Trazo hecho con el Lápiz mágico (ya está en el lienzo; se convertirá a texto). */
   magicStroke?(el: StrokeEl): void
+  /**
+   * Se acaba de hacer algo con el marcatextos, una figura o una línea y quedó seleccionado.
+   * `hl` es el modo del marcatextos cuando resaltó un texto.
+   */
+  made?(ids: string[], kind: 'resaltado' | 'figura' | 'linea', hl?: HighlightStyle): void
+  /** Doble toque con un lápiz: quita el puntito del primer toque (sin dejarlo en el historial). */
+  dropDot?(): void
+  /** Doble toque sobre algo: seleccionarlo. */
+  doubleTap?(id: string): void
+}
+
+/** Comportamientos que se pueden apagar en Ajustes. */
+export interface EngineFeatures {
+  /** Dejar seleccionado lo que se acaba de hacer (marcatextos, figuras, líneas). */
+  autoSelect: boolean
+  /** Doble toque sobre algo lo selecciona. */
+  doubleTap: boolean
+  /** Dejar el lápiz quieto al final convierte el trazo en figura perfecta. */
+  snapShapes: boolean
+  /** Toque con dos dedos deshace; con tres, rehace. */
+  fingerTaps: boolean
 }
 
 export const MIN_ZOOM = 0.1
@@ -101,6 +122,7 @@ export class Engine {
   bg: Background
   opts: ToolOptions
   soloLapiz = false
+  features: EngineFeatures = { autoSelect: true, doubleTap: true, snapShapes: true, fingerTaps: true }
   selected = new Set<string>()
   hidden = new Set<string>()
   /** Zona de la portada: lo de afuera se ve tapado. */
@@ -118,6 +140,8 @@ export class Engine {
   private hover: [number, number] | null = null
   private spaceDown = false
   private lastTap: { id: string; time: number } | null = null
+  /** Último puntito hecho con un lápiz (para reconocer el doble toque). */
+  private lastDot: { id: string; time: number; x: number; y: number } | null = null
   private raf = 0
   /** Toque rápido con varios dedos (para deshacer/rehacer). */
   private multiTap: { start: number; fingers: number; starts: Map<number, [number, number]>; moved: number; view: View } | null = null
@@ -435,6 +459,13 @@ export class Engine {
       ctx.strokeStyle = '#d9668a'
       ctx.strokeRect(sel.x - pad, sel.y - pad, sel.w + pad * 2, sel.h + pad * 2)
       ctx.setLineDash([])
+    }
+    // Las agarraderas (girar, cambiar tamaño) solo sirven con el lazo.
+    if (sel && g.kind !== 'lasso' && this.opts.tool === 'lazo') {
+      ctx.save()
+      const pad = 8
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = '#d9668a'
       const handles = this.handlePositions()!
       // Girar
       ctx.beginPath()
@@ -559,6 +590,8 @@ export class Engine {
     const [wx, wy] = this.toWorld(sx, sy)
     const tool = this.opts.tool
     const id = e.pointerId
+    // Lo que quedó seleccionado se suelta en cuanto se sigue dibujando.
+    if (tool !== 'lazo' && this.selected.size) this.select([])
 
     if (PEN_TOOLS.includes(tool)) {
       const pressure = e.pointerType === 'pen' && e.pressure > 0 && e.pressure !== 0.5
@@ -764,7 +797,7 @@ export class Engine {
     if (this.multiTap && !this.touchPoints().length) {
       const t = this.multiTap
       this.multiTap = null
-      if (performance.now() - t.start < 320 && t.moved < 14) {
+      if (this.features.fingerTaps && performance.now() - t.start < 320 && t.moved < 14) {
         this.gesture = { kind: 'none' }
         this.setView(t.view)
         if (t.fingers >= 3) this.cb.redo?.()
@@ -799,6 +832,7 @@ export class Engine {
           this.commit([...this.elements, g.snapped])
           break
         }
+        if (!g.magic && this.handleDot(g)) break
         const points = g.points.length === 3 ? [...g.points, g.points[0] + 0.1, g.points[1] + 0.1, g.points[2]] : g.points
         const el: StrokeEl = {
           type: 'stroke',
@@ -812,13 +846,20 @@ export class Engine {
         // Marcatextos mágico: sobre texto resalta las letras; sobre letra a mano se acomoda parejito.
         if (g.hl) {
           const mode = this.opts.highlighterMode
-          const done = this.highlightTexts(el, mode) ?? applyHighlighter(el, this.elements, mode, uid)
+          const before = new Set(this.elements.map((e) => e.id))
+          const onText = this.highlightTexts(el, mode)
+          const done = onText ?? applyHighlighter(el, this.elements, mode, uid)
           if (done) {
+            const prev = this.elements
             this.commit(done)
+            // Lo nuevo (o los textos que se resaltaron) queda seleccionado para cambiarle color o grosor.
+            const ids = onText ? done.filter((e, i) => e !== prev[i]).map((e) => e.id) : done.filter((e) => !before.has(e.id)).map((e) => e.id)
+            this.autoSelect(ids, 'resaltado', onText ? mode : undefined)
             break
           }
         }
         this.commit([...this.elements, el])
+        if (this.isDot(g)) this.lastDot = { id: el.id, time: performance.now(), x: g.points[0], y: g.points[1] }
         if (g.magic) this.cb.magicStroke?.(el)
         break
       }
@@ -835,15 +876,54 @@ export class Engine {
       case 'shape': {
         const el = this.shapeFrom(g.start, g.cur, true)
         this.commit([...this.elements, el])
+        this.autoSelect([el.id], 'figura')
         break
       }
       case 'line': {
         const len = Math.hypot(g.cur[0] - g.start[0], g.cur[1] - g.start[1]) * this.view.zoom
-        if (len > 6) this.commit([...this.elements, this.lineFrom(g.start, g.cur)])
+        if (len > 6) {
+          const el = this.lineFrom(g.start, g.cur)
+          this.commit([...this.elements, el])
+          this.autoSelect([el.id], 'linea')
+        }
         break
       }
     }
     this.requestRender(true, true)
+  }
+
+  private autoSelect(ids: string[], kind: 'resaltado' | 'figura' | 'linea', hl?: HighlightStyle) {
+    if (!this.features.autoSelect || !ids.length) return
+    this.select(ids)
+    this.cb.made?.(ids, kind, hl)
+  }
+
+  /** Un toquecito (no un trazo): poco tiempo y casi sin moverse. */
+  private isDot(g: Extract<Gesture, { kind: 'draw' }>): boolean {
+    if (performance.now() - g.start > 350) return false
+    const p = g.points
+    let ext = 0
+    for (let i = 3; i < p.length; i += 3) ext = Math.max(ext, Math.hypot(p[i] - p[0], p[i + 1] - p[1]))
+    return ext * this.view.zoom < 8
+  }
+
+  /**
+   * Doble toque con un lápiz sobre algo: en vez de dejar dos puntitos, lo selecciona.
+   * Devuelve true si lo atendió (y entonces no se dibuja nada).
+   */
+  private handleDot(g: Extract<Gesture, { kind: 'draw' }>): boolean {
+    if (!this.features.doubleTap || !this.isDot(g)) return false
+    const d = this.lastDot
+    const now = performance.now()
+    const [x, y] = [g.points[0], g.points[1]]
+    if (!d || now - d.time > 450 || Math.hypot(x - d.x, y - d.y) * this.view.zoom > 24) return false
+    const tol = 10 / this.view.zoom
+    const hit = [...this.elements].reverse().find((el) => el.id !== d.id && hitTest(el, x, y, tol))
+    if (!hit) return false
+    this.lastDot = null
+    if (this.elements[this.elements.length - 1]?.id === d.id) this.cb.dropDot?.()
+    this.cb.doubleTap?.(hit.id)
+    return true
   }
 
   private revert(g: Gesture) {
@@ -859,6 +939,7 @@ export class Engine {
 
   private trySnap() {
     const g = this.gesture
+    if (!this.features.snapShapes) return
     if (g.kind !== 'draw' || g.magic || g.hl || g.tool === 'marcador' || g.snapped) return
     const shape = recognizeShape(g.points, { color: g.color, width: Math.max(2, g.size * 0.8) })
     if (!shape) return

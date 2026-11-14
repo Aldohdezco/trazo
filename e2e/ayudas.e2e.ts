@@ -46,6 +46,7 @@ test.describe('ayuditas', () => {
   test('se pueden apagar en Ajustes', async ({ page }) => {
     await page.goto('./')
     await page.getByRole('button', { name: 'Ajustes' }).click()
+    await page.getByRole('tab', { name: /Más/ }).click()
     await page.getByText('Mostrar ayuditas').click()
     await page.getByRole('button', { name: 'Cerrar' }).click()
     await page.getByRole('button', { name: 'Papelera' }).hover()

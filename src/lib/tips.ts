@@ -9,8 +9,10 @@ export interface Tip {
 
 export const TIPS: Record<string, Tip> = {
   // Herramientas
+  'Más delgado': { name: 'Más delgado', desc: 'Hace más fino el trazo, la línea, la figura o el borde que tienes seleccionado.' },
+  'Más grueso': { name: 'Más grueso', desc: 'Hace más grueso el trazo, la línea, la figura o el borde que tienes seleccionado.' },
   'Mover lienzo': { name: 'Mano', desc: 'Arrastra para moverte por la hoja sin dibujar. Con dos dedos también te mueves y haces zoom.' },
-  Lazo: { name: 'Lazo', desc: 'Rodea lo que quieras para moverlo, girarlo, cambiarle el tamaño o el color, duplicarlo o volverlo sticker. Un toque elige una sola cosa.' },
+  Lazo: { name: 'Lazo', desc: 'Rodea lo que quieras para moverlo, girarlo, cambiarle el tamaño o el color, duplicarlo o volverlo sticker. Un toque elige una sola cosa. Con cualquier lápiz, un doble toque sobre algo también lo selecciona.' },
   'Lápiz mágico': { name: 'Lápiz mágico ✨', desc: 'Escribe a mano y haz una pausa: tu letra se convierte en texto bonito con la fuente de tu estilo (cursiva, molde o mayúsculas).' },
   Pluma: { name: 'Pluma', desc: 'Para escribir y dibujar con trazo suave. Si dejas el lápiz quieto al terminar un círculo, cuadro o línea, se endereza solo.' },
   Lápiz: { name: 'Lápiz', desc: 'Trazo delgadito con textura de lápiz de verdad, ideal para bocetos.' },
