@@ -59,24 +59,41 @@
     if (gridEl) gridEl.scrollTop = 0
   })
 
-  // Flechitas: aparecen solo si hay más pestañas hacia ese lado.
-  let canLeft = $state(false)
-  let canRight = $state(false)
-  function updateArrows() {
+  // Barra de desplazamiento propia (Safari en iPad no muestra la del sistema).
+  let bar = $state({ size: 1, pos: 0 })
+  function updateBar() {
     if (!tabsEl) return
-    canLeft = tabsEl.scrollLeft > 2
-    canRight = tabsEl.scrollLeft + tabsEl.clientWidth < tabsEl.scrollWidth - 2
+    const max = tabsEl.scrollWidth - tabsEl.clientWidth
+    bar = { size: tabsEl.clientWidth / tabsEl.scrollWidth, pos: max > 0 ? tabsEl.scrollLeft / max : 0 }
   }
   $effect(() => {
     if (!tabsEl) return
-    updateArrows()
-    const ro = new ResizeObserver(updateArrows)
+    updateBar()
+    const ro = new ResizeObserver(updateBar)
     ro.observe(tabsEl)
     return () => ro.disconnect()
   })
 
-  function scrollTabs(dir: 1 | -1) {
-    tabsEl?.scrollBy({ left: dir * tabsEl.clientWidth * 0.7, behavior: 'smooth' })
+  /** Arrastrar la barra (o tocar en cualquier parte de ella) mueve las secciones. */
+  function dragBar(e: PointerEvent) {
+    const track = e.currentTarget as HTMLElement
+    track.setPointerCapture(e.pointerId)
+    const move = (ev: PointerEvent) => {
+      if (!tabsEl) return
+      const r = track.getBoundingClientRect()
+      const thumb = r.width * bar.size
+      const t = Math.min(1, Math.max(0, (ev.clientX - r.left - thumb / 2) / Math.max(1, r.width - thumb)))
+      tabsEl.scrollLeft = t * (tabsEl.scrollWidth - tabsEl.clientWidth)
+    }
+    move(e)
+    const up = () => {
+      track.removeEventListener('pointermove', move)
+      track.removeEventListener('pointerup', up)
+      track.removeEventListener('pointercancel', up)
+    }
+    track.addEventListener('pointermove', move)
+    track.addEventListener('pointerup', up)
+    track.addEventListener('pointercancel', up)
   }
 
   /** Con el mouse: la rueda normal también mueve las pestañas de lado. */
@@ -98,13 +115,13 @@
 
 <Modal title="Stickers" {onclose} wide>
   <div class="tabs-wrap">
-    <button class="arrow left" class:show={canLeft} onclick={() => scrollTabs(-1)} aria-label="Ver secciones anteriores" tabindex={canLeft ? 0 : -1}>‹</button>
     <div
       class="tabs"
+      id="sticker-tabs"
       role="tablist"
       tabindex="-1"
       bind:this={tabsEl}
-      onscroll={updateArrows}
+      onscroll={updateBar}
       onwheel={onTabsWheel}
       onkeydown={(e) => {
         if (e.key === 'ArrowRight') stepTab(1)
@@ -115,7 +132,11 @@
         <button class="chip" class:on={tab === t} role="tab" aria-selected={tab === t} onclick={() => (tab = t)}>{t === 'Míos' ? '♡ Míos' : t}</button>
       {/each}
     </div>
-    <button class="arrow right" class:show={canRight} onclick={() => scrollTabs(1)} aria-label="Ver más secciones" tabindex={canRight ? 0 : -1}>›</button>
+    {#if bar.size < 0.999}
+      <div class="bar" role="scrollbar" aria-label="Desplazar secciones" aria-controls="sticker-tabs" aria-orientation="horizontal" aria-valuenow={Math.round(bar.pos * 100)} tabindex="-1" onpointerdown={dragBar}>
+        <span class="thumb" style="width:{bar.size * 100}%;left:{bar.pos * (1 - bar.size) * 100}%"></span>
+      </div>
+    {/if}
   </div>
 
   {#if tab === 'Míos'}
@@ -175,42 +196,6 @@
     max-width: 100%;
   }
 
-  .arrow {
-    position: absolute;
-    top: 50%;
-    z-index: 2;
-    width: 36px;
-    height: 36px;
-    margin-top: -20px;
-    display: grid;
-    place-items: center;
-    padding: 0 0 3px;
-    border: 1.5px solid var(--line);
-    border-radius: 50%;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    color: var(--accent-strong);
-    font-size: 24px;
-    font-weight: 800;
-    line-height: 1;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s ease;
-  }
-
-  .arrow.show {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .arrow.left {
-    left: -4px;
-  }
-
-  .arrow.right {
-    right: -4px;
-  }
-
   .tabs {
     min-width: 0;
     max-width: 100%;
@@ -221,14 +206,38 @@
     overscroll-behavior-x: contain;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
-    padding: 2px 2px 4px;
+    padding: 2px 2px 6px;
     margin-bottom: 4px;
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 24px), transparent);
-    mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 24px), transparent);
   }
 
   .tabs::-webkit-scrollbar {
     display: none;
+  }
+
+  .bar {
+    position: relative;
+    height: 22px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    touch-action: none;
+  }
+
+  .bar::before {
+    content: '';
+    position: absolute;
+    inset: 7px 0;
+    border-radius: 99px;
+    background: var(--surface-3);
+  }
+
+  .thumb {
+    position: absolute;
+    top: 4px;
+    height: 14px;
+    min-width: 40px;
+    border-radius: 99px;
+    background: var(--accent);
+    box-shadow: var(--shadow);
   }
 
   .tabs .chip {

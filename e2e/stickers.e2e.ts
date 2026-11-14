@@ -9,7 +9,12 @@ test('stickers: las secciones se deslizan y se puede llegar a todas', async ({ p
   expect(scroll).toBeGreaterThan(client)
   expect(right).toBeLessThanOrEqual(sheetRight)
   await page.screenshot({ path: info.outputPath('1.png') })
-  await page.getByRole('button', { name: 'Ver más secciones' }).click()
+  // Arrastrar la barra de desplazamiento hasta el final
+  const bar = (await page.getByRole('scrollbar', { name: 'Desplazar secciones' }).boundingBox())!
+  await page.mouse.move(bar.x + 20, bar.y + bar.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bar.x + bar.width - 5, bar.y + bar.height / 2, { steps: 6 })
+  await page.mouse.up()
   await expect.poll(() => tabs.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
   await page.screenshot({ path: info.outputPath('2.png') })
   await page.getByRole('tab', { name: 'Fiesta y fechas' }).click()
