@@ -3,7 +3,7 @@
   import { INK_COLORS, MARKER_COLORS, PEN_TOOLS, SHAPES, fontFamily } from '../lib/catalog'
   import { recognitionReady } from '../lib/recognize'
   import type { Tool, ToolOptions } from '../lib/canvas/engine'
-  import type { LineCap, PenTool } from '../lib/types'
+  import type { FontId, HighlightStyle, LineCap, PenTool } from '../lib/types'
   import { softFill } from '../lib/util'
   import ColorRow from './ColorRow.svelte'
   import Icon from './Icon.svelte'
@@ -15,19 +15,31 @@
     ondeco,
   }: { opts: ToolOptions; onimage: () => void; onstickers: () => void; ondeco: () => void } = $props()
 
-  const TOOLS: { id: Tool; label: string; key: string }[] = [
+  /** 'lapices' es el estuche: abre el último lápiz usado. */
+  const TOOLS: { id: Tool | 'lapices'; label: string; key: string }[] = [
     { id: 'mano', label: 'Mover lienzo', key: 'H' },
     { id: 'lazo', label: 'Lazo', key: 'V' },
     { id: 'magica', label: 'Lápiz mágico', key: 'W' },
-    { id: 'pluma', label: 'Pluma', key: 'P' },
-    { id: 'lapiz', label: 'Lápiz', key: 'L' },
-    { id: 'pincel', label: 'Pincel', key: 'B' },
+    { id: 'lapices', label: 'Lápices', key: 'P' },
     { id: 'marcador', label: 'Marcador', key: 'M' },
+    { id: 'resaltador', label: 'Marcatextos mágico', key: 'K' },
     { id: 'borrador', label: 'Borrador', key: 'E' },
     { id: 'figura', label: 'Figuras', key: 'F' },
     { id: 'linea', label: 'Líneas', key: 'R' },
     { id: 'texto', label: 'Texto', key: 'T' },
   ]
+
+  /** Lápices del estuche (todos menos el marcador, que tiene su botón). */
+  const CASE = PEN_TOOLS.filter((p) => p.id !== 'marcador')
+
+  const HL_MODES: { id: HighlightStyle; label: string }[] = [
+    { id: 'fondo', label: 'Fondo' },
+    { id: 'subrayado', label: 'Subrayar' },
+    { id: 'marco', label: 'Marco' },
+    { id: 'contorno', label: 'Contorno de letras' },
+  ]
+
+  const HL_COLORS = [...MARKER_COLORS, '#f29bb5', '#b88ee0', '#7aa7e0', '#6cc4a4', '#f2b25c', '#e46a5e']
 
   const SHAPE_PREVIEW: Record<string, string> = {
     rect: 'M4 6h16v12H4z',
@@ -48,9 +60,19 @@
   const pen = $derived(PEN_TOOLS.find((p) => p.id === opts.tool))
   const isPen = $derived(!!pen)
 
-  function setTool(t: Tool) {
-    opts.tool = t
+  function setTool(t: Tool | 'lapices') {
+    opts.tool = t === 'lapices' ? opts.lastPen : t
   }
+
+  function isActive(t: Tool | 'lapices') {
+    return t === 'lapices' ? CASE.some((p) => p.id === opts.tool) : opts.tool === t
+  }
+
+  // Recuerda el último lápiz del estuche
+  $effect(() => {
+    const t = opts.tool
+    if (CASE.some((p) => p.id === t) && opts.lastPen !== t) opts.lastPen = t as PenTool
+  })
 
   function setSize(tool: PenTool, v: number) {
     opts.sizes = { ...opts.sizes, [tool]: v }
@@ -60,6 +82,16 @@
 <div class="toolbar">
   <div class="context" aria-label="Opciones de la herramienta">
     {#if isPen && pen}
+      {#if pen.id !== 'marcador'}
+        <div class="case" role="radiogroup" aria-label="Estuche de lápices">
+          {#each CASE as p (p.id)}
+            <button class="icon-btn" class:active={opts.tool === p.id} role="radio" aria-checked={opts.tool === p.id} aria-label={p.name} onclick={() => (opts.tool = p.id)}>
+              <Icon name={p.id} />
+            </button>
+          {/each}
+        </div>
+        <span class="sep"></span>
+      {/if}
       <ColorRow
         value={opts.tool === 'marcador' ? opts.markerColor : opts.color}
         colors={opts.tool === 'marcador' ? MARKER_COLORS : INK_COLORS}
@@ -71,21 +103,39 @@
         <span class="sr-only">Grosor</span>
         <input type="range" min={pen.min} max={pen.max} step="1" value={opts.sizes[pen.id]} oninput={(e) => setSize(pen.id, +e.currentTarget.value)} />
       </label>
-      {#if opts.tool === 'marcador'}
-        <span class="sep"></span>
-        <button
-          class="chip"
-          class:on={opts.markerMagic}
-          aria-pressed={opts.markerMagic}
-          title="Se acomoda parejito detrás de la letra"
-          onclick={() => (opts.markerMagic = !opts.markerMagic)}>✨ Mágico</button
-        >
-      {/if}
+    {:else if opts.tool === 'resaltador'}
+      <div class="chip-row" role="radiogroup" aria-label="Modo del marcatextos">
+        {#each HL_MODES as m (m.id)}
+          <button class="chip" class:on={opts.highlighterMode === m.id} role="radio" aria-checked={opts.highlighterMode === m.id} onclick={() => (opts.highlighterMode = m.id)}>{m.label}</button>
+        {/each}
+      </div>
+      <span class="sep"></span>
+      <ColorRow value={opts.highlightColor} colors={HL_COLORS} onpick={(c) => (opts.highlightColor = c)} label="Color del marcatextos" />
+      <span class="sep"></span>
+      <label class="size">
+        <span class="dot" style="width:{Math.min(26, 4 + opts.highlighterSize * 0.5)}px;height:{Math.min(26, 4 + opts.highlighterSize * 0.5)}px;background:{opts.highlightColor}"></span>
+        <span class="sr-only">Grosor</span>
+        <input type="range" min="8" max="60" step="1" bind:value={opts.highlighterSize} />
+      </label>
     {:else if opts.tool === 'magica'}
       <ColorRow value={opts.color} colors={INK_COLORS} onpick={(c) => (opts.color = c)} />
       <span class="sep"></span>
       {#if recognitionReady(app.settings.reconocimiento)}
-        <span class="hint">Escribe y haz una pausa: tu letra se vuelve texto ✨</span>
+        <label class="magic-font">
+          <span>Letra:</span>
+          <select
+            class="font"
+            aria-label="Letra del lápiz mágico"
+            value={opts.magicFont}
+            style={opts.magicFont === 'auto' ? '' : `font-family:'${fontFamily(opts.magicFont)}'`}
+            onchange={(e) => (opts.magicFont = e.currentTarget.value as FontId | 'auto')}
+          >
+            <option value="auto">✨ Automática (según tu letra)</option>
+            {#each fontOptions() as f (f.id)}
+              <option value={f.id}>{f.name}</option>
+            {/each}
+          </select>
+        </label>
       {:else}
         <button class="chip on" onclick={() => (app.settingsOpen = true)}>✨ Activar la escritura mágica</button>
       {/if}
@@ -159,10 +209,10 @@
 
   <div class="tools" role="toolbar" aria-label="Herramientas">
     {#each TOOLS as t (t.id)}
-      <button class="icon-btn tool" class:active={opts.tool === t.id} onclick={() => setTool(t.id)} aria-label={t.label} aria-pressed={opts.tool === t.id} title="{t.label} ({t.key})">
-        <Icon name={t.id} />
-        {#if PEN_TOOLS.some((p) => p.id === t.id) || t.id === 'magica'}
-          <span class="ink" style="background:{t.id === 'marcador' ? opts.markerColor : opts.color}"></span>
+      <button class="icon-btn tool" class:active={isActive(t.id)} onclick={() => setTool(t.id)} aria-label={t.label} aria-pressed={isActive(t.id)} title="{t.label} ({t.key})">
+        <Icon name={t.id === 'lapices' ? opts.lastPen : t.id} />
+        {#if t.id === 'lapices' || t.id === 'marcador' || t.id === 'magica' || t.id === 'resaltador'}
+          <span class="ink" style="background:{t.id === 'marcador' ? opts.markerColor : t.id === 'resaltador' ? opts.highlightColor : opts.color}"></span>
         {/if}
       </button>
     {/each}
@@ -262,9 +312,25 @@
     accent-color: var(--accent);
   }
 
-  .shapes {
+  .shapes,
+  .case {
     display: flex;
     gap: 2px;
+  }
+
+  .shapes .icon-btn,
+  .case .icon-btn {
+    flex: none;
+  }
+
+  .magic-font {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--text-soft);
   }
 
   .shapes .icon-btn {

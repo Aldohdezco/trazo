@@ -76,8 +76,14 @@ export function fontFamily(id: FontId): string {
 
 export const PEN_TOOLS: { id: PenTool; name: string; defaultSize: number; min: number; max: number }[] = [
   { id: 'pluma', name: 'Pluma', defaultSize: 4, min: 1, max: 30 },
+  { id: 'fino', name: 'Pluma fina', defaultSize: 2, min: 1, max: 12 },
   { id: 'lapiz', name: 'Lápiz', defaultSize: 3, min: 1, max: 20 },
+  { id: 'crayon', name: 'Crayón', defaultSize: 10, min: 3, max: 40 },
   { id: 'pincel', name: 'Pincel', defaultSize: 12, min: 2, max: 60 },
+  { id: 'caligrafia', name: 'Caligrafía', defaultSize: 10, min: 3, max: 40 },
+  { id: 'acuarela', name: 'Acuarela', defaultSize: 24, min: 6, max: 80 },
+  { id: 'neon', name: 'Neón', defaultSize: 6, min: 2, max: 24 },
+  { id: 'brillos', name: 'Brillitos', defaultSize: 10, min: 4, max: 40 },
   { id: 'marcador', name: 'Marcador', defaultSize: 22, min: 6, max: 60 },
 ]
 

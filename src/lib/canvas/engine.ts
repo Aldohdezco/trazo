@@ -1,4 +1,4 @@
-import type { Background, DecoEl, El, FontId, LineCap, LineEl, PenTool, Rect, ShapeEl, ShapeKind, StrokeEl, TextEl, View } from '../types'
+import type { Background, DecoEl, El, FontId, HighlightStyle, LineCap, LineEl, PenTool, Rect, ShapeEl, ShapeKind, StrokeEl, TextEl, View } from '../types'
 import { clamp, isDark, uid } from '../util'
 import { drawPaper } from './background'
 import { boxOf, contentBounds, elBounds, eraseStroke, hitTest, lassoSelects, rectsIntersect, rotateEl, rotatePoint, scaleEl, translateEl, unionRects } from './geom'
@@ -6,16 +6,22 @@ import { layoutText, measureWith, mergeHighlights, rangesUnder } from './text'
 import { onImageLoaded } from './images'
 import { drawElement, drawElements, drawLine, drawStroke, shapePath, strokeOutline } from './render'
 import { recognizeShape } from './shapes'
-import { straightenMarker } from './magicMarker'
+import { applyHighlighter } from './magicMarker'
 
-export type Tool = 'mano' | 'lazo' | 'magica' | PenTool | 'borrador' | 'figura' | 'linea' | 'texto'
+export type Tool = 'mano' | 'lazo' | 'magica' | 'resaltador' | PenTool | 'borrador' | 'figura' | 'linea' | 'texto'
 
 export interface ToolOptions {
   tool: Tool
   color: string
   markerColor: string
-  /** Marcatextos mágico: el trazo se endereza en una franja pareja detrás de la letra. */
-  markerMagic: boolean
+  /** Marcatextos mágico: color, grosor y modo. */
+  highlightColor: string
+  highlighterSize: number
+  highlighterMode: HighlightStyle
+  /** Último lápiz del estuche que se usó (el botón "Lápices" vuelve a él). */
+  lastPen: PenTool
+  /** Letra del Lápiz mágico: 'auto' detecta el estilo; si no, siempre esa fuente. */
+  magicFont: FontId | 'auto'
   sizes: Record<PenTool, number>
   eraserSize: number
   eraserMode: 'trazo' | 'parcial'
@@ -47,7 +53,7 @@ export interface EngineCallbacks {
 export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 8
 
-const PEN_TOOLS: Tool[] = ['pluma', 'lapiz', 'pincel', 'marcador', 'magica']
+const PEN_TOOLS: Tool[] = ['pluma', 'fino', 'lapiz', 'crayon', 'pincel', 'caligrafia', 'acuarela', 'neon', 'brillos', 'marcador', 'magica', 'resaltador']
 const HANDLE_RADIUS = 20
 const ROTATE_OFFSET = 34
 
@@ -64,6 +70,10 @@ type Gesture =
       pressure: boolean
       start: number
       magic: boolean
+      /** Trazo del marcatextos mágico. */
+      hl: boolean
+      color: string
+      size: number
       /** Figura reconocida al dejar el lápiz quieto: reemplaza al trazo. */
       snapped?: ShapeEl | LineEl | null
     }
@@ -362,9 +372,9 @@ export class Engine {
     if (g.kind === 'draw' && g.snapped) {
       drawElement(ctx, g.snapped, { darkPaper })
     } else if (g.kind === 'draw' && g.points.length) {
-      const size = this.opts.sizes[g.tool]
+      const size = g.size
       const path = strokeOutline(g.points, g.tool, size, g.pressure, false)
-      const live: StrokeEl = { type: 'stroke', id: '', tool: g.tool, color: this.strokeColor(g.tool), size, points: g.points, pressure: g.pressure }
+      const live: StrokeEl = { type: 'stroke', id: '', tool: g.tool, color: g.color, size, points: g.points, pressure: g.pressure }
       // En el lienzo de encima no hay "multiplicar" contra el papel: solo transparencia.
       ctx.save()
       if (g.tool === 'marcador') ctx.globalAlpha = 0.6
@@ -540,14 +550,19 @@ export class Engine {
     if (PEN_TOOLS.includes(tool)) {
       const pressure = e.pointerType === 'pen' && e.pressure > 0 && e.pressure !== 0.5
       const magic = tool === 'magica'
+      const hl = tool === 'resaltador'
+      const penTool: PenTool = magic ? 'pluma' : hl ? 'marcador' : (tool as PenTool)
       this.gesture = {
         kind: 'draw',
         pointerId: id,
         points: [wx, wy, pressure ? e.pressure : 0.5],
-        tool: magic ? 'pluma' : (tool as PenTool),
+        tool: penTool,
         pressure,
         start: performance.now(),
         magic,
+        hl,
+        color: hl ? this.opts.highlightColor : this.strokeColor(penTool),
+        size: hl ? this.opts.highlighterSize : this.opts.sizes[penTool],
       }
       this.armHold(sx, sy)
       this.requestRender(false, true)
@@ -760,21 +775,19 @@ export class Engine {
           type: 'stroke',
           id: uid(),
           tool: g.tool,
-          color: this.strokeColor(g.tool),
-          size: this.opts.sizes[g.tool],
+          color: g.color,
+          size: g.size,
           points: points.map((v) => Math.round(v * 100) / 100),
           pressure: g.pressure,
         }
-        // El marcador sobre un texto le pinta el fondo en lugar de quedar como trazo.
-        const highlighted = g.tool === 'marcador' ? this.highlightTexts(el) : null
-        if (highlighted) {
-          this.commit(highlighted)
-          break
-        }
-        const band = g.tool === 'marcador' && this.opts.markerMagic ? straightenMarker(el, this.elements, uid) : null
-        if (band) {
-          this.commit(band)
-          break
+        // Marcatextos mágico: sobre texto resalta las letras; sobre letra a mano se acomoda parejito.
+        if (g.hl) {
+          const mode = this.opts.highlighterMode
+          const done = this.highlightTexts(el, mode) ?? applyHighlighter(el, this.elements, mode, uid)
+          if (done) {
+            this.commit(done)
+            break
+          }
         }
         this.commit([...this.elements, el])
         if (g.magic) this.cb.magicStroke?.(el)
@@ -817,8 +830,8 @@ export class Engine {
 
   private trySnap() {
     const g = this.gesture
-    if (g.kind !== 'draw' || g.magic || g.tool === 'marcador' || g.snapped) return
-    const shape = recognizeShape(g.points, { color: this.strokeColor(g.tool), width: Math.max(2, this.opts.sizes[g.tool] * 0.8) })
+    if (g.kind !== 'draw' || g.magic || g.hl || g.tool === 'marcador' || g.snapped) return
+    const shape = recognizeShape(g.points, { color: g.color, width: Math.max(2, g.size * 0.8) })
     if (!shape) return
     g.snapped = shape
     navigator.vibrate?.(12)
@@ -853,7 +866,7 @@ export class Engine {
     this.cb.commit(els)
   }
 
-  private highlightTexts(stroke: StrokeEl): El[] | null {
+  private highlightTexts(stroke: StrokeEl, style: HighlightStyle): El[] | null {
     const sb = elBounds(stroke)
     let changed = false
     const els = this.elements.map((el) => {
@@ -866,7 +879,7 @@ export class Engine {
         const [lx, ly] = rotatePoint(stroke.points[i], stroke.points[i + 1], cx, cy, -el.rotation)
         local.push(lx - box.x, ly - box.y)
       }
-      const ranges = rangesUnder(el, layoutText(el), local, stroke.color, (s) => measureWith(el, s))
+      const ranges = rangesUnder(el, layoutText(el), local, stroke.color, (s) => measureWith(el, s), style)
       if (!ranges) return el
       changed = true
       return { ...el, highlights: mergeHighlights(el.highlights ?? [], ranges) }

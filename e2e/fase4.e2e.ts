@@ -47,7 +47,8 @@ test('importar un PDF y escribir encima', async ({ page }, info) => {
   await expect(page.locator('input.title')).toHaveValue('tarea')
 
   const box = (await page.locator('.stage').boundingBox())!
-  await page.getByRole('button', { name: 'Pluma' }).click()
+  await page.getByRole('button', { name: 'Lápices' }).click()
+  await page.getByRole('radio', { name: 'Pluma', exact: true }).click()
   await drag(page, Array.from({ length: 12 }, (_, i) => [box.x + 160 + i * 20, box.y + 300 + Math.sin(i) * 15] as [number, number]))
   await page.waitForTimeout(600)
   await page.screenshot({ path: info.outputPath('1-pdf.png') })
@@ -81,7 +82,8 @@ test('pantalla dividida: dos notas lado a lado y copiar de una a otra', async ({
   await expect(stages).toHaveCount(2)
   const left = (await stages.nth(0).boundingBox())!
   // Dibujo en la izquierda y lo copio a la derecha
-  await page.getByRole('button', { name: 'Pincel' }).first().click()
+  await page.getByRole('button', { name: 'Lápices' }).first().click()
+  await page.getByRole('radio', { name: 'Pincel', exact: true }).first().click()
   await drag(page, Array.from({ length: 10 }, (_, i) => [left.x + 80 + i * 15, left.y + 200 + (i % 2) * 30] as [number, number]))
   await page.getByRole('button', { name: 'Lazo' }).first().click()
   await drag(page, [[left.x + 60, left.y + 170], [left.x + 260, left.y + 170], [left.x + 260, left.y + 260], [left.x + 60, left.y + 260], [left.x + 62, left.y + 172]])
@@ -106,7 +108,8 @@ test('figuras a mano: dejar el lápiz quieto endereza el dibujo', async ({ page 
   await page.getByRole('button', { name: 'Nueva nota' }).click()
   await page.getByRole('button', { name: 'Crear nota' }).click()
   const b = (await page.locator('.stage').boundingBox())!
-  await page.getByRole('button', { name: 'Pluma' }).click()
+  await page.getByRole('button', { name: 'Lápices' }).click()
+  await page.getByRole('radio', { name: 'Pluma', exact: true }).click()
 
   // Círculo chueco, sostenido al final
   const circle = Array.from({ length: 30 }, (_, i) => {

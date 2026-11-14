@@ -62,3 +62,38 @@ describe('marcatextos mágico', () => {
     expect(straightenMarker(stroke('m', [[0, 0], [3, 1]], 'marcador', 20), [], id)).toBeNull()
   })
 })
+
+describe('modos del marcatextos mágico', () => {
+  const wobbly = () => stroke('m', Array.from({ length: 40 }, (_, i) => [95 + i * 5.5, 118 + Math.sin(i * 0.7) * 6] as [number, number]), 'marcador', 22)
+
+  it('subrayar: línea recta debajo del renglón', async () => {
+    const { applyHighlighter } = await import('../src/lib/canvas/magicMarker')
+    const out = applyHighlighter(wobbly(), [...word], 'subrayado', id)!
+    const line = out[out.length - 1]
+    expect(line).toMatchObject({ type: 'line' })
+    if (line.type !== 'line') return
+    expect(line.y1).toBeCloseTo(line.y2, 5)
+    // Debajo de la parte baja de la letra (≈130)
+    expect(line.y1).toBeGreaterThan(128)
+    expect(line.x2 - line.x1).toBeGreaterThan(150)
+  })
+
+  it('marco: recuadro redondeado sin relleno alrededor del renglón', async () => {
+    const { applyHighlighter } = await import('../src/lib/canvas/magicMarker')
+    const out = applyHighlighter(wobbly(), [...word], 'marco', id)!
+    const box = out[out.length - 1]
+    expect(box).toMatchObject({ type: 'shape', shape: 'redondeado', fill: null, rotation: 0 })
+    if (box.type !== 'shape') return
+    expect(box.y).toBeLessThan(105)
+    expect(box.y + box.h).toBeGreaterThan(125)
+  })
+
+  it('contorno: un halo por cada letra tocada, detrás de ella', async () => {
+    const { applyHighlighter } = await import('../src/lib/canvas/magicMarker')
+    const out = applyHighlighter(wobbly(), [...word], 'contorno', id)!
+    const halos = out.slice(0, 3) as StrokeEl[]
+    expect(halos.every((h) => h.tool === 'marcador')).toBe(true)
+    expect(halos.map((h) => h.size)).toEqual([4 + 22 * 0.35 * 2, 4 + 22 * 0.35 * 2, 4 + 22 * 0.35 * 2].map((v) => Math.round(v * 100) / 100))
+    expect(out.slice(3).map((e) => e.id)).toEqual(['w1', 'w2', 'alta'])
+  })
+})

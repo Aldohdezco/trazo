@@ -55,7 +55,7 @@ export interface Note {
   kind?: 'portada'
 }
 
-export type PenTool = 'pluma' | 'lapiz' | 'pincel' | 'marcador'
+export type PenTool = 'pluma' | 'fino' | 'lapiz' | 'crayon' | 'pincel' | 'caligrafia' | 'acuarela' | 'neon' | 'brillos' | 'marcador'
 
 export interface StrokeEl {
   type: 'stroke'
@@ -114,11 +114,16 @@ export type BuiltinFontId =
 /** Fuente incluida, o una creada por ella en el taller (`custom:<id>`). */
 export type FontId = BuiltinFontId | `custom:${string}`
 
+/** Cómo resalta el marcatextos mágico: franja de fondo, subrayado, marco o contorno de las letras. */
+export type HighlightStyle = 'fondo' | 'subrayado' | 'marco' | 'contorno'
+
 export interface Highlight {
   /** Rango de caracteres [start, end) dentro de `text`. */
   start: number
   end: number
   color: string
+  /** Sin valor = 'fondo' (resaltados hechos antes de los modos). */
+  style?: HighlightStyle
 }
 
 export interface TextEl {

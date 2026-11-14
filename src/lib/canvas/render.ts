@@ -9,18 +9,58 @@ import { boxOf, elBounds, rectsIntersect } from './geom'
 
 const STROKE_OPTS: Record<PenTool, Parameters<typeof getStroke>[1]> = {
   pluma: { thinning: 0.55, smoothing: 0.5, streamline: 0.45 },
+  fino: { thinning: 0, smoothing: 0.5, streamline: 0.5 },
   lapiz: { thinning: 0.25, smoothing: 0.35, streamline: 0.3 },
+  crayon: { thinning: 0.1, smoothing: 0.3, streamline: 0.3 },
   pincel: { thinning: 0.8, smoothing: 0.7, streamline: 0.55, start: { taper: 30 }, end: { taper: 40 } },
+  caligrafia: {},
+  acuarela: { thinning: 0.6, smoothing: 0.8, streamline: 0.6, start: { taper: 20 }, end: { taper: 30 } },
+  neon: { thinning: 0, smoothing: 0.6, streamline: 0.55 },
+  brillos: { thinning: 0.2, smoothing: 0.6, streamline: 0.5 },
   marcador: { thinning: 0, smoothing: 0.5, streamline: 0.6 },
 }
 
+/** Herramientas de trazo parejo (no simulan presión). */
+const CONSTANT_WIDTH = new Set<PenTool>(['marcador', 'fino', 'neon'])
+
+/**
+ * Caligrafía: punta biselada a 45°. Cada tramo es un paralelogramo; todos con el mismo
+ * sentido de giro para que al encimarse no queden huecos.
+ */
+function calligraphyPath(points: number[], size: number): Path2D {
+  const p = new Path2D()
+  const nx = Math.cos(-Math.PI / 4) * (size / 2)
+  const ny = Math.sin(-Math.PI / 4) * (size / 2)
+  const n = points.length / 3
+  for (let i = 0; i < n; i++) {
+    const x0 = points[Math.max(0, i - 1) * 3]
+    const y0 = points[Math.max(0, i - 1) * 3 + 1]
+    const x1 = points[i * 3]
+    const y1 = points[i * 3 + 1]
+    let quad = [
+      [x0 + nx, y0 + ny],
+      [x1 + nx, y1 + ny],
+      [x1 - nx, y1 - ny],
+      [x0 - nx, y0 - ny],
+    ]
+    let area = 0
+    for (let k = 0; k < 4; k++) area += quad[k][0] * quad[(k + 1) % 4][1] - quad[(k + 1) % 4][0] * quad[k][1]
+    if (area < 0) quad = quad.reverse()
+    p.moveTo(quad[0][0], quad[0][1])
+    for (let k = 1; k < 4; k++) p.lineTo(quad[k][0], quad[k][1])
+    p.closePath()
+  }
+  return p
+}
+
 export function strokeOutline(points: number[], tool: PenTool, size: number, realPressure: boolean, last: boolean): Path2D {
+  if (tool === 'caligrafia') return calligraphyPath(points, size)
   const input: [number, number, number][] = []
   for (let i = 0; i < points.length; i += 3) input.push([points[i], points[i + 1], points[i + 2]])
   const outline = getStroke(input, {
     ...STROKE_OPTS[tool],
     size,
-    simulatePressure: tool !== 'marcador' && !realPressure,
+    simulatePressure: !CONSTANT_WIDTH.has(tool) && !realPressure,
     last,
   })
   const path = new Path2D()
@@ -49,22 +89,54 @@ function strokePath(el: StrokeEl): Path2D {
 
 const grainCache = new Map<string, CanvasPattern>()
 
-/** Textura granulada para el lápiz. */
-function pencilGrain(ctx: CanvasRenderingContext2D, color: string): CanvasPattern | string {
-  let pat = grainCache.get(color)
+/** Textura granulada: fina para el lápiz, gruesa y con huequitos para el crayón. */
+function grain(ctx: CanvasRenderingContext2D, color: string, coarse = false): CanvasPattern | string {
+  const key = color + (coarse ? ':c' : '')
+  let pat = grainCache.get(key)
   if (pat) return pat
   const c = document.createElement('canvas')
   c.width = c.height = 64
   const g = c.getContext('2d')!
   g.fillStyle = color
-  for (let i = 0; i < 64 * 64; i++) {
-    g.globalAlpha = 0.45 + Math.random() * 0.55
-    g.fillRect(i % 64, Math.floor(i / 64), 1, 1)
+  const cell = coarse ? 2 : 1
+  for (let y = 0; y < 64; y += cell) {
+    for (let x = 0; x < 64; x += cell) {
+      const r = Math.random()
+      if (coarse && r < 0.12) continue // huequitos del papel
+      g.globalAlpha = coarse ? 0.6 + r * 0.4 : 0.45 + r * 0.55
+      g.fillRect(x, y, cell, cell)
+    }
   }
   pat = ctx.createPattern(c, 'repeat') ?? undefined
   if (!pat) return color
-  grainCache.set(color, pat)
+  grainCache.set(key, pat)
   return pat
+}
+
+const coreCache = new WeakMap<StrokeEl, Path2D>()
+
+/** Brillitos repartidos a lo largo del trazo (siempre en los mismos lugares). */
+function drawGlitter(ctx: CanvasRenderingContext2D, el: StrokeEl) {
+  const p = el.points
+  let seed = 0
+  for (const ch of el.id) seed = (seed * 31 + ch.charCodeAt(0)) % 2147483647
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const step = Math.max(3, Math.round(el.size * 0.5))
+  for (let i = 0; i < p.length; i += 3 * step) {
+    const r = el.size * (0.12 + rnd() * 0.18)
+    const x = p[i] + (rnd() - 0.5) * el.size * 0.7
+    const y = p[i + 1] + (rnd() - 0.5) * el.size * 0.7
+    ctx.fillStyle = rnd() > 0.5 ? '#ffffff' : '#ffe08a'
+    ctx.globalAlpha = 0.75 + rnd() * 0.25
+    ctx.beginPath()
+    // Estrellita de 4 puntas
+    ctx.moveTo(x, y - r * 1.6)
+    ctx.quadraticCurveTo(x, y, x + r * 1.6, y)
+    ctx.quadraticCurveTo(x, y, x, y + r * 1.6)
+    ctx.quadraticCurveTo(x, y, x - r * 1.6, y)
+    ctx.quadraticCurveTo(x, y, x, y - r * 1.6)
+    ctx.fill()
+  }
 }
 
 export interface DrawOptions {
@@ -74,17 +146,61 @@ export interface DrawOptions {
 
 export function drawStroke(ctx: CanvasRenderingContext2D, el: StrokeEl, opts: DrawOptions, path = strokePath(el)) {
   ctx.save()
-  if (el.tool === 'marcador') {
-    ctx.globalAlpha = opts.darkPaper ? 0.45 : 0.75
-    if (!opts.darkPaper) ctx.globalCompositeOperation = 'multiply'
-    ctx.fillStyle = el.color
-  } else if (el.tool === 'lapiz') {
-    ctx.globalAlpha = 0.92
-    ctx.fillStyle = pencilGrain(ctx, el.color)
-  } else {
-    ctx.fillStyle = el.color
+  switch (el.tool) {
+    case 'marcador':
+      ctx.globalAlpha = opts.darkPaper ? 0.45 : 0.75
+      if (!opts.darkPaper) ctx.globalCompositeOperation = 'multiply'
+      ctx.fillStyle = el.color
+      ctx.fill(path)
+      break
+    case 'lapiz':
+      ctx.globalAlpha = 0.92
+      ctx.fillStyle = grain(ctx, el.color)
+      ctx.fill(path)
+      break
+    case 'crayon':
+      ctx.globalAlpha = 0.95
+      ctx.fillStyle = grain(ctx, el.color, true)
+      ctx.fill(path)
+      break
+    case 'acuarela':
+      // Pintura aguada: transparente y con la orilla difuminada.
+      ctx.globalAlpha = opts.darkPaper ? 0.5 : 0.4
+      if (!opts.darkPaper) ctx.globalCompositeOperation = 'multiply'
+      ctx.shadowColor = el.color
+      ctx.shadowBlur = el.size * 0.8
+      ctx.fillStyle = el.color
+      ctx.fill(path)
+      ctx.shadowBlur = 0
+      ctx.globalAlpha *= 0.6
+      ctx.fill(path)
+      break
+    case 'neon': {
+      // Resplandor del color y centro clarito.
+      ctx.shadowColor = el.color
+      ctx.shadowBlur = el.size * 1.8
+      ctx.fillStyle = el.color
+      ctx.fill(path)
+      ctx.shadowBlur = 0
+      let core = coreCache.get(el)
+      if (!core || !el.id) {
+        core = strokeOutline(el.points, 'neon', el.size * 0.35, false, true)
+        if (el.id) coreCache.set(el, core)
+      }
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+      ctx.fill(core)
+      break
+    }
+    case 'brillos':
+      ctx.fillStyle = el.color
+      ctx.globalAlpha = 0.9
+      ctx.fill(path)
+      drawGlitter(ctx, el)
+      break
+    default:
+      ctx.fillStyle = el.color
+      ctx.fill(path)
   }
-  ctx.fill(path)
   ctx.restore()
 }
 
@@ -217,12 +333,13 @@ function drawText(ctx: CanvasRenderingContext2D, el: TextEl) {
     const top = -box.h / 2
     const left = -box.w / 2
 
-    // Fondo pintado con el marcador, detrás de las letras.
+    // Resaltados del marcador, detrás de las letras (fondo, subrayado, marco o contorno).
     if (el.highlights?.length) {
       lines.forEach((line, i) => {
         const s = starts[i]
         const lineW = ctx.measureText(line).width
         const ax = left + (el.align === 'left' ? 0 : el.align === 'center' ? (box.w - lineW) / 2 : box.w - lineW)
+        const midY = top + lh * (i + 0.5)
         for (const h of el.highlights!) {
           const a = Math.max(h.start, s) - s
           const b = Math.min(h.end, s + line.length) - s
@@ -230,12 +347,40 @@ function drawText(ctx: CanvasRenderingContext2D, el: TextEl) {
           const x0 = ax + ctx.measureText(line.slice(0, a)).width
           const x1 = ax + ctx.measureText(line.slice(0, b)).width
           const pad = el.size * 0.12
+          ctx.save()
           ctx.fillStyle = h.color
-          ctx.globalAlpha = 0.85
-          ctx.beginPath()
-          ctx.roundRect(x0 - pad, top + lh * i + lh * 0.1, x1 - x0 + pad * 2, lh * 0.82, el.size * 0.18)
-          ctx.fill()
-          ctx.globalAlpha = 1
+          ctx.strokeStyle = h.color
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+          switch (h.style ?? 'fondo') {
+            case 'fondo':
+              ctx.globalAlpha = 0.85
+              ctx.beginPath()
+              ctx.roundRect(x0 - pad, top + lh * i + lh * 0.1, x1 - x0 + pad * 2, lh * 0.82, el.size * 0.18)
+              ctx.fill()
+              break
+            case 'subrayado':
+              ctx.lineWidth = Math.max(2, el.size * 0.09)
+              ctx.beginPath()
+              ctx.moveTo(x0, midY + el.size * 0.5)
+              ctx.lineTo(x1, midY + el.size * 0.5)
+              ctx.stroke()
+              break
+            case 'marco':
+              ctx.lineWidth = Math.max(2, el.size * 0.07)
+              ctx.beginPath()
+              ctx.roundRect(x0 - pad * 1.5, top + lh * i + lh * 0.04, x1 - x0 + pad * 3, lh * 0.92, el.size * 0.3)
+              ctx.stroke()
+              break
+            case 'contorno':
+              // Halo que sigue la forma de cada letra.
+              ctx.lineWidth = el.size * 0.3
+              ctx.textBaseline = 'middle'
+              ctx.textAlign = 'left'
+              ctx.strokeText(line.slice(a, b), x0, midY)
+              break
+          }
+          ctx.restore()
         }
       })
     }

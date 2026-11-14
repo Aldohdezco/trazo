@@ -48,8 +48,12 @@
     tool: 'pluma',
     color: '#2b2328',
     markerColor: '#ffd1dc',
-    markerMagic: true,
-    sizes: { pluma: 4, lapiz: 3, pincel: 12, marcador: 22 },
+    highlightColor: '#ffe7a3',
+    highlighterSize: 22,
+    highlighterMode: 'fondo',
+    lastPen: 'pluma',
+    magicFont: 'auto',
+    sizes: { pluma: 4, fino: 2, lapiz: 3, crayon: 10, pincel: 12, caligrafia: 10, acuarela: 24, neon: 6, brillos: 10, marcador: 22 },
     eraserSize: 28,
     eraserMode: 'trazo',
     shape: 'corazon',
@@ -366,8 +370,9 @@
         commit(rest.map((e) => (e.id === prev.id ? grown : e)))
         lastMagic = { id: prev.id, time: Date.now() }
       } else {
-        const style = seen ?? detectStyle(strokes.length, text)
-        const el = textFromStrokes(strokes, text, app.settings.fuentesEstilo[style])
+        // Letra elegida en el Lápiz mágico, o la del estilo que se detectó.
+        const font = opts.magicFont !== 'auto' ? opts.magicFont : app.settings.fuentesEstilo[seen ?? detectStyle(strokes.length, text)]
+        const el = textFromStrokes(strokes, text, font)
         commit([...rest, el])
         if (magic) lastMagic = { id: el.id, time: Date.now() }
       }
@@ -588,7 +593,7 @@
 
   // ---------- Teclado ----------
 
-  const KEYS: Record<string, Tool> = { w: 'magica', v: 'lazo', h: 'mano', p: 'pluma', l: 'lapiz', b: 'pincel', m: 'marcador', e: 'borrador', f: 'figura', r: 'linea', t: 'texto' }
+  const KEYS: Record<string, Tool> = { w: 'magica', v: 'lazo', h: 'mano', p: 'pluma', l: 'lapiz', b: 'pincel', m: 'marcador', k: 'resaltador', e: 'borrador', f: 'figura', r: 'linea', t: 'texto' }
 
   function isTyping(t: EventTarget | null) {
     const el = t as HTMLElement | null

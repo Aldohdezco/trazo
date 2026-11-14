@@ -172,7 +172,8 @@ test('escritura mágica, marcador sobre texto y búsqueda', async ({ page }, inf
   await page.getByRole('button', { name: /Lunes/ }).click()
 
   // Lazo + "Convertir a texto" también funciona con trazos normales
-  await page.getByRole('button', { name: 'Pluma' }).click()
+  await page.getByRole('button', { name: 'Lápices' }).click()
+  await page.getByRole('radio', { name: 'Pluma', exact: true }).click()
   await drag(page, [at(150, 400), at(170, 380), at(190, 420), at(210, 380)])
   await page.getByRole('button', { name: 'Lazo' }).click()
   await drag(page, [at(130, 360), at(240, 360), at(240, 440), at(130, 440), at(130, 362)])

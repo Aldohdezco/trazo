@@ -1,5 +1,5 @@
 import { fontFamily } from '../catalog'
-import type { Highlight, TextEl } from '../types'
+import type { Highlight, HighlightStyle, TextEl } from '../types'
 
 export const LINE_HEIGHT = 1.35
 
@@ -111,6 +111,20 @@ export function measureWith(el: TextEl, s: string): number {
 
 /** Agrega rangos resaltados: lo nuevo tapa lo viejo y los rangos vecinos del mismo color se unen. */
 export function mergeHighlights(existing: Highlight[], added: Highlight[]): Highlight[] {
+  // Cada modo (fondo, subrayado, marco, contorno) se combina por separado: pueden convivir.
+  const styles = new Set([...existing, ...added].map((h) => h.style ?? 'fondo'))
+  if (styles.size > 1) {
+    return [...styles].flatMap((st) =>
+      mergeSameStyle(
+        existing.filter((h) => (h.style ?? 'fondo') === st),
+        added.filter((h) => (h.style ?? 'fondo') === st),
+      ),
+    )
+  }
+  return mergeSameStyle(existing, added)
+}
+
+function mergeSameStyle(existing: Highlight[], added: Highlight[]): Highlight[] {
   let out = existing.slice()
   for (const h of added) {
     const next: Highlight[] = []
@@ -159,6 +173,7 @@ export function rangesUnder(
   local: number[],
   color: string,
   measure: (s: string) => number,
+  style?: HighlightStyle,
 ): Highlight[] | null {
   const lh = el.size * LINE_HEIGHT
   const h = layout.lines.length * lh
@@ -197,7 +212,7 @@ export function rangesUnder(
       }
       x += cw
     }
-    if (first >= 0) out.push({ start: layout.starts[li] + first, end: layout.starts[li] + last + 1, color })
+    if (first >= 0) out.push({ start: layout.starts[li] + first, end: layout.starts[li] + last + 1, color, ...(style && style !== 'fondo' ? { style } : {}) })
   })
   return out.length ? out : null
 }
