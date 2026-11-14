@@ -58,13 +58,64 @@
     tabsEl?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' })
     if (gridEl) gridEl.scrollTop = 0
   })
+
+  // Flechitas: aparecen solo si hay más pestañas hacia ese lado.
+  let canLeft = $state(false)
+  let canRight = $state(false)
+  function updateArrows() {
+    if (!tabsEl) return
+    canLeft = tabsEl.scrollLeft > 2
+    canRight = tabsEl.scrollLeft + tabsEl.clientWidth < tabsEl.scrollWidth - 2
+  }
+  $effect(() => {
+    if (!tabsEl) return
+    updateArrows()
+    const ro = new ResizeObserver(updateArrows)
+    ro.observe(tabsEl)
+    return () => ro.disconnect()
+  })
+
+  function scrollTabs(dir: 1 | -1) {
+    tabsEl?.scrollBy({ left: dir * tabsEl.clientWidth * 0.7, behavior: 'smooth' })
+  }
+
+  /** Con el mouse: la rueda normal también mueve las pestañas de lado. */
+  function onTabsWheel(e: WheelEvent) {
+    if (!tabsEl || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
+    e.preventDefault()
+    tabsEl.scrollLeft += e.deltaY
+  }
+
+  /** Cambiar a la sección de al lado (flechas del teclado o deslizar sobre los stickers). */
+  function stepTab(dir: 1 | -1) {
+    const i = tabs.indexOf(tab)
+    const next = tabs[i + dir]
+    if (next) tab = next
+  }
+
+  let swipe: { x: number; y: number } | null = null
 </script>
 
 <Modal title="Stickers" {onclose} wide>
-  <div class="tabs" role="tablist" bind:this={tabsEl}>
-    {#each tabs as t (t)}
-      <button class="chip" class:on={tab === t} role="tab" aria-selected={tab === t} onclick={() => (tab = t)}>{t === 'Míos' ? '♡ Míos' : t}</button>
-    {/each}
+  <div class="tabs-wrap">
+    <button class="arrow left" class:show={canLeft} onclick={() => scrollTabs(-1)} aria-label="Ver secciones anteriores" tabindex={canLeft ? 0 : -1}>‹</button>
+    <div
+      class="tabs"
+      role="tablist"
+      tabindex="-1"
+      bind:this={tabsEl}
+      onscroll={updateArrows}
+      onwheel={onTabsWheel}
+      onkeydown={(e) => {
+        if (e.key === 'ArrowRight') stepTab(1)
+        else if (e.key === 'ArrowLeft') stepTab(-1)
+      }}
+    >
+      {#each tabs as t (t)}
+        <button class="chip" class:on={tab === t} role="tab" aria-selected={tab === t} onclick={() => (tab = t)}>{t === 'Míos' ? '♡ Míos' : t}</button>
+      {/each}
+    </div>
+    <button class="arrow right" class:show={canRight} onclick={() => scrollTabs(1)} aria-label="Ver más secciones" tabindex={canRight ? 0 : -1}>›</button>
   </div>
 
   {#if tab === 'Míos'}
@@ -88,7 +139,23 @@
       </div>
     {/if}
   {:else}
-    <div class="grid scroll" bind:this={gridEl}>
+    <div
+      class="grid scroll"
+      role="tabpanel"
+      tabindex="0"
+      aria-label={tab}
+      bind:this={gridEl}
+      onpointerdown={(e) => e.pointerType !== 'mouse' && (swipe = { x: e.clientX, y: e.clientY })}
+      onpointerup={(e) => {
+        // Deslizar de lado sobre los stickers: sección siguiente o anterior.
+        if (!swipe) return
+        const dx = e.clientX - swipe.x
+        const dy = e.clientY - swipe.y
+        swipe = null
+        if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 2) stepTab(dx < 0 ? 1 : -1)
+      }}
+      onpointercancel={() => (swipe = null)}
+    >
       {#each builtins as s (s.id)}
         <button class="sticker" class:tw={!!s.src} onclick={() => onpick({ blobId: 'builtin:' + s.id, ratio: s.ratio })} aria-label={s.name} title={s.name}>
           <img src={stickerDataUrl(s)} alt="" loading="lazy" decoding="async" draggable="false" />
@@ -102,7 +169,52 @@
 </Modal>
 
 <style>
+  .tabs-wrap {
+    position: relative;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .arrow {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    width: 36px;
+    height: 36px;
+    margin-top: -20px;
+    display: grid;
+    place-items: center;
+    padding: 0 0 3px;
+    border: 1.5px solid var(--line);
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    color: var(--accent-strong);
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+  }
+
+  .arrow.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .arrow.left {
+    left: -4px;
+  }
+
+  .arrow.right {
+    right: -4px;
+  }
+
   .tabs {
+    min-width: 0;
+    max-width: 100%;
+    touch-action: pan-x;
     display: flex;
     gap: 8px;
     overflow-x: auto;
@@ -126,6 +238,8 @@
   }
 
   .scroll {
+    min-width: 0;
+    touch-action: pan-y;
     max-height: min(56vh, 520px);
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -135,6 +249,9 @@
 
   .grid {
     display: grid;
+    /* Filas a su tamaño (no aplastadas por la altura máxima del área con scroll). */
+    grid-auto-rows: max-content;
+    align-content: start;
     grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
     gap: 12px;
   }
